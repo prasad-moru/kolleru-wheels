@@ -33,12 +33,14 @@ class HomeDirectoryScreen extends StatefulWidget {
     this.onDriverMode,
     this.loadRequestRepository,
     this.remoteDriverRepository,
+    this.authRepository,
   });
   final DirectoryRepository? repository;
   final LocalDriverRepository? localDriverRepository;
   final VoidCallback? onDriverMode;
   final LoadRequestRepository? loadRequestRepository;
   final SupabaseDriverRepository? remoteDriverRepository;
+  final AuthRepository? authRepository;
   @override
   State<HomeDirectoryScreen> createState() => _HomeDirectoryScreenState();
 }
@@ -46,6 +48,7 @@ class HomeDirectoryScreen extends StatefulWidget {
 class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   late final DirectoryRepository _repository;
   late final LocalDriverRepository _localRepository;
+  late final AuthRepository _auth;
   LocalDriverProfile? _localProfile;
   List<DriverModel>? _liveDrivers;
   late final SupabaseDriverRepository _remoteDrivers;
@@ -62,6 +65,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     super.initState();
     _repository = widget.repository ?? MockDirectoryRepository();
     _localRepository = widget.localDriverRepository ?? LocalDriverRepository();
+    _auth = widget.authRepository ?? AuthRepository.instance;
     _remoteDrivers =
         widget.remoteDriverRepository ?? SupabaseDriverRepository.instance;
     if (widget.repository == null || widget.remoteDriverRepository != null) {
@@ -108,8 +112,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       widget.onDriverMode!();
       return;
     }
-    if (!AuthRepository.instance.isMock &&
-        AuthRepository.instance.currentProfile?.role != 'driver') {
+    if (!_auth.isMock && _auth.currentProfile?.role != 'driver') {
       await _openSignIn();
       return;
     }
@@ -117,9 +120,8 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       MaterialPageRoute<void>(
         builder: (_) => DriverModeScreen(
           repository: _localRepository,
-          verifiedPhone:
-              AuthRepository.instance.currentProfile?.role == 'driver'
-              ? AuthRepository.instance.currentProfile?.phone
+          verifiedPhone: _auth.currentProfile?.role == 'driver'
+              ? _auth.currentProfile?.phone
               : null,
           loadRequestRepository: widget.loadRequestRepository,
         ),
@@ -135,6 +137,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PhoneOtpScreen(
+          repository: _auth,
           onVerified: (profile) => Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
               builder: (_) => RoleDestination(profile: profile),
@@ -144,6 +147,33 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       ),
     );
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openDigitalCard() async {
+    try {
+      final driver = await _localRepository.getProfile();
+      if (!mounted) return;
+      if (driver == null || driver.phone != _auth.currentProfile?.phone) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'ముందుగా డ్రైవర్ నమోదు పూర్తి చేయండి / Complete driver registration first.',
+            ),
+          ),
+        );
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => VisitingCardScreen(driver: driver.toDriverModel()),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text(AppStrings.loadFailed)));
+      }
+    }
   }
 
   Future<void> _postLoad() async {
@@ -278,43 +308,83 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.person_pin),
-                title: const Text(AppStrings.driverMode),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _openDriverMode();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.verified_user),
-                title: const Text('OTP లాగిన్ / Phone sign-in'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _openSignIn();
-                },
-              ),
-              if (AuthRepository.instance.currentProfile?.role == 'admin')
+              if (_auth.currentProfile == null)
                 ListTile(
+                  key: const ValueKey('drawer-login'),
+                  leading: const Icon(Icons.login),
+                  title: const Text('లాగిన్ / నమోదు (Login / Sign in)'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _openSignIn();
+                  },
+                ),
+              if (_auth.currentProfile?.role == 'driver') ...[
+                ListTile(
+                  key: const ValueKey('drawer-driver-dashboard'),
+                  leading: const Icon(Icons.person_pin),
+                  title: const Text('డ్రైవర్ డ్యాష్‌బోర్డ్ (Driver Dashboard)'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _openDriverMode();
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-digital-card'),
+                  leading: const Icon(Icons.badge),
+                  title: const Text('విజిటింగ్ కార్డ్ (Digital Card)'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _openDigitalCard();
+                  },
+                ),
+              ],
+              if (_auth.currentProfile?.role == 'shipper') ...[
+                ListTile(
+                  key: const ValueKey('drawer-farmer-view'),
+                  leading: const Icon(Icons.agriculture),
+                  title: const Text('రైతు వీక్షణ (Farmer View)'),
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-post-load'),
+                  leading: const Icon(Icons.campaign),
+                  title: const Text('అత్యవసర లోడ్ పోస్ట్ చేయండి (Post Load)'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _postLoad();
+                  },
+                ),
+              ],
+              if (_auth.currentProfile?.role == 'admin')
+                ListTile(
+                  key: const ValueKey('drawer-admin-monitor'),
+                  selected: true,
+                  selectedColor: Colors.white,
+                  selectedTileColor: AppColors.green,
                   leading: const Icon(Icons.admin_panel_settings),
-                  title: const Text('అడ్మిన్ / Admin Monitor'),
+                  title: const Text(
+                    'నిర్వాహకుల ప్యానెల్ / Admin Monitor',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const AdminDashboardScreen(),
+                        builder: (_) =>
+                            AdminDashboardScreen(authRepository: _auth),
                       ),
                     );
                   },
                 ),
-              if (AuthRepository.instance.currentProfile != null)
+              if (_auth.currentProfile != null)
                 ListTile(
+                  key: const ValueKey('drawer-logout'),
                   leading: const Icon(Icons.logout),
-                  title: const Text('లాగ్ అవుట్ / Sign out'),
+                  title: const Text('లాగౌట్ (Logout)'),
                   onTap: () async {
                     Navigator.of(context).pop();
                     try {
-                      await AuthRepository.instance.signOut();
+                      await _auth.signOut();
                     } catch (_) {
                       /* Local identity has been cleared. */
                     }

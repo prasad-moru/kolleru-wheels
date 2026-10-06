@@ -21,10 +21,20 @@ class AuthRepository {
   final DateTime Function() _now;
   UserProfile? currentProfile;
   String? _pendingPhone;
-  String _pendingRole = 'shipper';
+  String? _verifiedPhone;
+  String? onboardingPhone;
+  String? get verifiedPhone {
+    if (isMock) return _verifiedPhone ?? currentProfile?.phone;
+    final raw = _client?.auth.currentUser?.phone;
+    return raw == null
+        ? null
+        : normalizePhone(raw.startsWith('+') ? raw : '+$raw');
+  }
+
   DateTime? _sentAt;
   static const _sessionKey = 'auth_identity_v1';
   static const _rolesKey = 'auth_roles_v1';
+  static const _onboardingKey = 'auth_onboarding_v1';
 
   static String normalizePhone(String phone) {
     final digits = phone.replaceAll(RegExp(r'\s'), '');
@@ -54,11 +64,11 @@ class AuthRepository {
           .timeout(const Duration(seconds: 15));
     }
     _pendingPhone = normalized;
-    _pendingRole = role;
+    _verifiedPhone = null;
     _sentAt = _now();
   }
 
-  Future<UserProfile> verifyOTP({
+  Future<UserProfile?> verifyOTP({
     required String phone,
     required String token,
   }) async {
@@ -72,7 +82,7 @@ class AuthRepository {
           _now().difference(_sentAt!) >= const Duration(minutes: 5)) {
         throw const FormatException('Incorrect or expired demo OTP');
       }
-    } else {
+    } else if (_verifiedPhone != normalized || verifiedPhone != normalized) {
       final response = await _client!.auth
           .verifyOTP(phone: normalized, token: token, type: OtpType.sms)
           .timeout(const Duration(seconds: 15));
@@ -82,23 +92,87 @@ class AuthRepository {
         throw StateError('Phone verification failed');
       }
     }
+    _verifiedPhone = normalized;
     final profile = isMock
-        ? UserProfile(phone: normalized, role: _pendingRole)
+        ? await _cachedProfile(normalized)
         : await _remoteProfile(normalized);
-    await _cache(profile);
+    if (profile == null) {
+      await _markOnboarding(normalized);
+    } else {
+      await _cache(profile);
+    }
     currentProfile = profile;
     _pendingPhone = null;
     return profile;
   }
 
-  Future<UserProfile> _remoteProfile(String phone) async {
+  Future<UserProfile?> _remoteProfile(String phone) async {
     final row = await _client!
         .from('user_profiles')
         .select('phone,role,name')
         .eq('phone', phone)
-        .single()
+        .maybeSingle()
         .timeout(const Duration(seconds: 8));
-    return UserProfile.fromJson(row);
+    return row == null ? null : UserProfile.fromJson(row);
+  }
+
+  Future<UserProfile?> _cachedProfile(String phone) async {
+    final prefs = await SharedPreferences.getInstance();
+    final roles = jsonDecode(prefs.getString(_rolesKey) ?? '{}') as Map;
+    final row = roles[phone];
+    return row == null
+        ? null
+        : UserProfile.fromJson(Map<String, dynamic>.from(row as Map));
+  }
+
+  Future<void> _markOnboarding(String phone) async {
+    onboardingPhone = phone;
+    currentProfile = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_sessionKey);
+    await prefs.setString(
+      _onboardingKey,
+      jsonEncode({'phone': phone, 'mock': isMock}),
+    );
+  }
+
+  Future<UserProfile> createUserProfile({
+    required String phone,
+    required String name,
+    required String role,
+  }) async {
+    final normalized = normalizePhone(phone);
+    if (verifiedPhone != normalized) {
+      throw StateError('Verify this phone first');
+    }
+    if (!['driver', 'shipper'].contains(role)) {
+      throw ArgumentError('Invalid public role');
+    }
+    if (name.trim().length < 2 || name.trim().length > 80) {
+      throw const FormatException('Enter your name');
+    }
+    var profile = isMock
+        ? await _cachedProfile(normalized)
+        : await _remoteProfile(normalized);
+    if (profile == null) {
+      profile = UserProfile(phone: normalized, name: name.trim(), role: role);
+      if (!isMock) {
+        final row = await _client!
+            .from('user_profiles')
+            .insert({
+              ...profile.toJson(),
+              'user_id': _client.auth.currentUser!.id,
+            })
+            .select('phone,role,name')
+            .maybeSingle()
+            .timeout(const Duration(seconds: 8));
+        if (row == null) throw StateError('Profile save was not confirmed');
+        profile = UserProfile.fromJson(row);
+      }
+    }
+    await _cache(profile);
+    currentProfile = profile;
+    return profile;
   }
 
   Future<void> _cache(UserProfile profile) async {
@@ -120,6 +194,8 @@ class AuthRepository {
         )) {
       throw StateError('Could not save sign-in');
     }
+    await prefs.remove(_onboardingKey);
+    onboardingPhone = null;
   }
 
   Future<UserProfile?> restoreSession() async {
@@ -127,13 +203,27 @@ class AuthRepository {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_sessionKey);
       if (raw == null) {
+        if (isMock) {
+          final pending = prefs.getString(_onboardingKey);
+          if (pending != null) {
+            final row = jsonDecode(pending) as Map;
+            if (row['mock'] == true) {
+              _verifiedPhone = normalizePhone(row['phone'] as String);
+              onboardingPhone = _verifiedPhone;
+            }
+          }
+        }
         final phone = _client?.auth.currentUser?.phone;
         if (!isMock && phone != null) {
           final normalized = normalizePhone(
             phone.startsWith('+') ? phone : '+$phone',
           );
           final profile = await _remoteProfile(normalized);
-          await _cache(profile);
+          if (profile == null) {
+            await _markOnboarding(normalized);
+          } else {
+            await _cache(profile);
+          }
           return currentProfile = profile;
         }
         return currentProfile = null;
@@ -153,7 +243,12 @@ class AuthRepository {
       }
       if (!isMock) {
         try {
-          profile = await _remoteProfile(profile.phone);
+          final remote = await _remoteProfile(profile.phone);
+          if (remote == null) {
+            await _markOnboarding(profile.phone);
+            return null;
+          }
+          profile = remote;
           await _cache(profile);
         } catch (_) {
           /* Cached role only restores offline UI. */
@@ -170,6 +265,7 @@ class AuthRepository {
     if (!isMock && _client != null) {
       try {
         final profile = await _remoteProfile(normalized);
+        if (profile == null) return null;
         if (currentProfile?.phone == normalized) {
           await _cache(profile);
           currentProfile = profile;
@@ -197,7 +293,7 @@ class AuthRepository {
       final raw = _client!.auth.currentUser!.phone;
       if (raw == null) return false;
       final phone = normalizePhone(raw.startsWith('+') ? raw : '+$raw');
-      return (await _remoteProfile(phone)).role == 'admin';
+      return (await _remoteProfile(phone))?.role == 'admin';
     } catch (_) {
       return false;
     }
@@ -206,6 +302,9 @@ class AuthRepository {
   Future<void> signOut() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_sessionKey);
+    await prefs.remove(_onboardingKey);
+    onboardingPhone = null;
+    _verifiedPhone = null;
     currentProfile = null;
     _pendingPhone = null;
     if (!isMock && _client != null) {

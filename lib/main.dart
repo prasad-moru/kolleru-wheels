@@ -7,6 +7,7 @@ import 'data/repositories/supabase_load_request_repository.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/models/user_profile_model.dart';
 import 'presentation/auth/role_destination.dart';
+import 'presentation/auth/complete_profile_screen.dart';
 
 import 'core/theme/app_theme.dart';
 import 'presentation/farmer/home_directory_screen.dart';
@@ -26,19 +27,31 @@ Future<void> main() async {
   }
   LoadRequestRepository.instance = SupabaseLoadRequestRepository();
   final profile = await AuthRepository.instance.restoreSession();
-  runApp(KolleruWheelsApp(initialProfile: profile));
+  runApp(
+    KolleruWheelsApp(
+      initialProfile: profile,
+      onboardingPhone: AuthRepository.instance.onboardingPhone,
+    ),
+  );
 }
 
 class KolleruWheelsApp extends StatelessWidget {
-  const KolleruWheelsApp({super.key, this.initialProfile});
+  const KolleruWheelsApp({
+    super.key,
+    this.initialProfile,
+    this.onboardingPhone,
+  });
   final UserProfile? initialProfile;
+  final String? onboardingPhone;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Kolleru Wheels',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
     home: initialProfile == null
-        ? const HomeDirectoryScreen()
+        ? (onboardingPhone == null
+              ? const HomeDirectoryScreen()
+              : CompleteProfileScreen(phone: onboardingPhone!))
         : RoleDestination(profile: initialProfile!),
   );
 }

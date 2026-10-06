@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../data/models/user_profile_model.dart';
 import '../../data/repositories/auth_repository.dart';
+import 'complete_profile_screen.dart';
 
 class PhoneOtpScreen extends StatefulWidget {
   const PhoneOtpScreen({super.key, this.repository, required this.onVerified});
@@ -18,6 +19,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
   late final _auth = widget.repository ?? AuthRepository.instance;
   final _phone = TextEditingController();
   final _otp = TextEditingController();
+  final _phoneForm = GlobalKey<FormState>();
   String _role = 'shipper';
   bool _sent = false;
   bool _busy = false;
@@ -28,6 +30,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
 
   Future<void> _send() async {
     if (_busy || _seconds > 0) return;
+    if (!_phoneForm.currentState!.validate()) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -53,9 +56,12 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
       });
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'OTP పంపలేకపోయాము / Check mobile number and connection, then retry.',
-        );
+        const message =
+            'SMS పంపడం విఫలమైంది. దయచేసి సరైన నెంబర్ సరిచూడండి లేదా టెస్ట్ నెంబర్ వాడండి.';
+        setState(() => _error = message);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -73,7 +79,20 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
         phone: _phone.text,
         token: _otp.text,
       );
-      if (mounted) widget.onVerified(profile);
+      if (!mounted) return;
+      if (profile == null) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => CompleteProfileScreen(
+              phone: AuthRepository.normalizePhone(_phone.text),
+              repository: _auth,
+              onCompleted: widget.onVerified,
+            ),
+          ),
+        );
+      } else {
+        widget.onVerified(profile);
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -103,18 +122,37 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
         children: [
           if (_auth.isMock)
             const Text('డెమో / Demo sign-in: use OTP 123456. No SMS is sent.'),
-          TextField(
-            key: const ValueKey('auth-phone'),
-            controller: _phone,
-            enabled: !_sent && !_busy,
-            keyboardType: TextInputType.phone,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(10),
-            ],
-            decoration: const InputDecoration(
-              prefixText: '+91 ',
-              labelText: 'ఫోన్ నెంబర్ / Mobile number',
+          Form(
+            key: _phoneForm,
+            child: TextFormField(
+              key: const ValueKey('auth-phone'),
+              controller: _phone,
+              validator: (value) {
+                try {
+                  AuthRepository.normalizePhone(value ?? '');
+                  return null;
+                } on FormatException {
+                  return 'సరైన 10 అంకెల మొబైల్ నెంబర్ ఇవ్వండి / Enter a valid 10-digit Indian mobile number';
+                }
+              },
+              enabled: !_sent && !_busy,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [
+                TextInputFormatter.withFunction((oldValue, newValue) {
+                  var digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+                  if (digits.length == 12 && digits.startsWith('91')) {
+                    digits = digits.substring(2);
+                  }
+                  return TextEditingValue(
+                    text: digits,
+                    selection: TextSelection.collapsed(offset: digits.length),
+                  );
+                }),
+              ],
+              decoration: const InputDecoration(
+                prefixText: '+91 ',
+                labelText: 'ఫోన్ నెంబర్ / Mobile number',
+              ),
             ),
           ),
           const SizedBox(height: 20),

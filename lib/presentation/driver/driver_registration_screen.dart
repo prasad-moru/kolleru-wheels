@@ -9,8 +9,10 @@ import '../../data/models/local_driver_profile.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../common/village_picker.dart';
+import '../auth/role_destination.dart';
 import 'driver_dashboard_screen.dart';
 
 class DriverRegistrationScreen extends StatefulWidget {
@@ -20,9 +22,15 @@ class DriverRegistrationScreen extends StatefulWidget {
     this.onRegistered,
     this.loadRequestRepository,
     this.verifiedPhone,
+    this.initialName,
+    this.authRepository,
+    this.completeUserProfile = false,
   });
   final LocalDriverRepository repository;
   final String? verifiedPhone;
+  final String? initialName;
+  final AuthRepository? authRepository;
+  final bool completeUserProfile;
   final LoadRequestRepository? loadRequestRepository;
   final ValueChanged<LocalDriverProfile>? onRegistered;
   @override
@@ -40,10 +48,12 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   VehicleType _vehicle = VehicleType.boleroPickup;
   String? _villageId;
   bool _saving = false;
+  final _driverId = const Uuid().v4();
 
   @override
   void initState() {
     super.initState();
+    _name.text = widget.initialName ?? '';
     if (widget.verifiedPhone != null) {
       _phone.text = widget.verifiedPhone!.substring(3);
     }
@@ -71,7 +81,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     setState(() => _saving = true);
     final village = KolleruVillages.find(_villageId)!;
     final profile = LocalDriverProfile(
-      id: const Uuid().v4(),
+      id: _driverId,
       name: _name.text.trim(),
       phone: '+91${_mobileDigits(_phone.text)}',
       baseVillage: village,
@@ -84,6 +94,26 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     );
     try {
       await widget.repository.saveProfile(profile);
+      if (widget.completeUserProfile) {
+        final user = await (widget.authRepository ?? AuthRepository.instance)
+            .createUserProfile(
+              phone: profile.phone,
+              name: profile.name,
+              role: 'driver',
+            );
+        if (!mounted) return;
+        if (user.role != 'driver') {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => RoleDestination(
+                profile: user,
+                authRepository: widget.authRepository,
+              ),
+            ),
+          );
+          return;
+        }
+      }
       if (!mounted) return;
       if (widget.onRegistered != null) {
         widget.onRegistered!(profile);

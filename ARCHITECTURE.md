@@ -148,6 +148,7 @@ kolleru-wheels/
 │       ├── admin/
 │       │   └── admin_dashboard_screen.dart
 │       ├── auth/
+│       │   ├── complete_profile_screen.dart
 │       │   ├── phone_otp_screen.dart
 │       │   └── role_destination.dart
 │       ├── common/
@@ -166,10 +167,12 @@ kolleru-wheels/
 │           └── post_load_bottom_sheet.dart
 ├── supabase/
 │   └── migrations/
-│       └── 202610060001_auth_and_telemetry.sql
+│       ├── 202610060001_auth_and_telemetry.sql
+│       └── 202610070001_profile_completion.sql
 ├── test/
 │   ├── auth_and_telemetry_test.dart
 │   ├── driver_onboarding_test.dart
+│   ├── drawer_navigation_test.dart
 │   ├── load_request_test.dart
 │   ├── proximity_and_load_request_test.dart
 │   ├── proximity_matcher_test.dart
@@ -513,11 +516,11 @@ Offline posting reports that the request was saved locally and is awaiting sync;
 
 ## 12. Phone identity, roles, call telemetry, and admin monitoring
 
-This extension keeps browsing and dialing available without login. In configured builds, Driver Mode requires a verified driver identity. The drawer offers optional phone sign-in for driver and shipper onboarding, an admin entry for server-assigned admins, and sign-out. Unconfigured builds retain the original local Driver Mode for prototype use.
+This extension keeps browsing and dialing available without login. In configured builds, Driver Mode requires a verified driver identity. The unified drawer shows one Login / Sign in entry for guests; Driver Dashboard, Digital Card, and Logout for drivers; Farmer View, Post Load, and Logout for shippers; and a prominent green Admin Monitor entry plus Logout for admins. The card action uses only the saved profile matching the signed-in phone and asks incomplete registrations to finish onboarding. Unconfigured builds retain the original app-bar Driver Mode for prototype use. Admin monitoring still requires live authorization; drawer visibility alone grants no data access.
 
 ### Identity and navigation
 
-`UserProfile` contains normalized E.164 `phone`, `role` (`driver`, `shipper`, or `admin`), and `name`. `AuthRepository` uses Supabase `signInWithOtp` and `verifyOTP` with `OtpType.sms`. Only driver and shipper roles can be chosen publicly. The database trigger derives initial roles from these allowed choices; the client reads the authoritative profile after verification instead of granting a role from the UI.
+`UserProfile` contains normalized E.164 `phone`, `role` (`driver`, `shipper`, or `admin`), and `name`. `AuthRepository` uses Supabase `signInWithOtp` and `verifyOTP` with `OtpType.sms`. Only driver and shipper roles can be chosen publicly. The profile-completion migration described below replaces automatic profile provisioning with verified self-registration. Existing roles remain authoritative server records.
 
 `PhoneOtpScreen` validates an Indian mobile number, prefixes `+91`, offers bilingual role chips, accepts a six-digit code, and provides a 60-second resend countdown. The timer is a resend cooldown, not the configured Supabase OTP expiry. Errors allow retry without claiming verification succeeded. Mock OTP is `123456`, lasts five minutes, and is visibly labeled as a demo that sends no SMS. Mock mode is available when credentials are unset or explicitly injected for tests; configured network failures never switch to mock verification.
 
@@ -528,6 +531,8 @@ Cached roles restore offline navigation, never authorization. `getRole(phone)` q
 `main.dart` restores identity before rendering the application. `RoleDestination` routes drivers to `DriverModeScreen`, shippers to the directory, and admins to the monitor. Driver registration uses the verified phone as a read-only field; a profile from another phone on the device is not reused. The initial role choice applies to new accounts; existing accounts keep their server-assigned role. Signing out clears the active app identity and the local SDK session while retaining offline directory data.
 
 ### Call intents
+
+Phone entry validates the national ten-digit number before sending SMS and formats the request with `+91`. Pasting a complete Indian number normalizes the country prefix into the fixed-prefix field. SMS-send failures, including Supabase Auth 400 responses, display the friendly Telugu message “SMS పంపడం విఫలమైంది. దయచేసి సరైన నెంబర్ సరిచూడండి లేదా టెస్ట్ నెంబర్ వాడండి.” in a snackbar and inline feedback. Failure leaves the screen ready for correction/retry without switching to mock mode.
 
 `TelemetryRepository.logCallIntent` inserts `caller_phone`, `receiver_phone`, `caller_role`, and `context_note` into `call_telemetry`. `CallButton` starts logging before launching `tel:` but deliberately does not await telemetry. Network timeout or rejection is silently caught so the dialer remains responsive. Demo buttons do not launch a call or record an intent.
 
@@ -556,7 +561,21 @@ update public.user_profiles set role = 'admin' where phone = '+91YOUR_ADMIN_NUMB
 
 Enable Supabase Phone Auth and configure its SMS provider before testing real OTP delivery. Deployments with existing profile/telemetry tables must reconcile this migration with their actual schema and policies first. The migration is supplied locally; no remote SQL, admin promotion, or SMS configuration was performed by this implementation.
 
+### Sign-in or Register extension (7 October 2026)
+
+Profile reads use `maybeSingle()` and return null for zero rows. Empty results are not OTP failures; duplicate rows, authorization errors, and connectivity failures remain errors rather than being mistaken for a missing account. `verifyOTP` returns a nullable profile only after verifying the phone. Existing accounts follow `RoleDestination`; newly verified phones open `CompleteProfileScreen` for name and public role choice.
+
+Shippers save `user_profiles` with `createUserProfile(phone, name, role)` and enter the directory. Drivers continue to `DriverRegistrationScreen` with their name and verified read-only phone prefilled; submission saves vehicle details locally and creates the user profile before entering the dashboard. Existing dashboard synchronization handles cloud driver publication and offline pending writes. Failed profile saves keep the registration form retryable; retries reuse the driver ID. Profile creation requires the session's verified phone, validates name length, preserves existing server roles, and cannot create admins.
+
+`auth_onboarding_v1` stores a confirmed missing-profile state for incomplete onboarding. Mock sign-ins follow the same new/existing distinction and can resume incomplete registration after restart. Configured builds retain the SDK session; startup retries profile discovery and resumes completion after a confirmed missing row. Cached identity still supports offline navigation for completed profiles. Post-verification profile-fetch retries reuse the authenticated session rather than attempting to consume the OTP again.
+
+Apply `supabase/migrations/202610070001_profile_completion.sql` after the original auth/telemetry migration. It removes automatic provisioning for future auth accounts, allows authenticated self-inserts only for their own user ID and JWT phone, restricts new roles to driver/shipper, and validates name length. Existing accounts are preserved. It does not grant role updates or admin signup. This follow-up migration is prepared locally and has not been applied to the live database.
+
+The auth tests additionally cover empty remote results without singular-response headers, nullable verification, verified self-registration, pending onboarding restoration, prevention of admin/unverified-phone signup, shipper profile creation/navigation, and combined driver/user-profile persistence before dashboard navigation.
+
 ### Verification and remaining boundaries
+
+`test/drawer_navigation_test.dart` covers all four role menus, highlighted admin navigation, driver dashboard/card navigation, logout-to-guest state, phone validation, country-prefix normalization, and Supabase Auth 400 feedback.
 
 `test/auth_and_telemetry_test.dart` covers mock OTP validation, resend/expiry, persistence, sign-out, SMS verification through mocked Supabase HTTP, authoritative roles, corrupt caches, configured-auth failure without bypass, telemetry schema/rejection, nonblocking dialer launch, role navigation, offline admin refusal, and exact admin queries with India-day boundaries. These checks do not validate live SMS delivery or execute the PostgreSQL migration.
 

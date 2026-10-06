@@ -11,9 +11,13 @@ import 'package:kolleru_wheels/data/models/user_profile_model.dart';
 import 'package:kolleru_wheels/data/repositories/auth_repository.dart';
 import 'package:kolleru_wheels/data/repositories/telemetry_repository.dart';
 import 'package:kolleru_wheels/presentation/auth/phone_otp_screen.dart';
+import 'package:kolleru_wheels/presentation/auth/complete_profile_screen.dart';
 import 'package:kolleru_wheels/presentation/auth/role_destination.dart';
 import 'package:kolleru_wheels/presentation/common/call_button.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_registration_screen.dart';
+import 'package:kolleru_wheels/presentation/driver/driver_dashboard_screen.dart';
+import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
+import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/presentation/farmer/home_directory_screen.dart';
 import 'package:kolleru_wheels/presentation/admin/admin_dashboard_screen.dart';
 
@@ -43,6 +47,29 @@ http.Response response(Object body, [int status = 200]) => http.Response(
   headers: {'content-type': 'application/json'},
 );
 
+Map<String, dynamic> otpSession() {
+  final expiry =
+      DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
+      1000;
+  final payload = base64Url
+      .encode(utf8.encode(jsonEncode({'exp': expiry})))
+      .replaceAll('=', '');
+  return {
+    'access_token': 'eyJhbGciOiJIUzI1NiJ9.$payload.signature',
+    'refresh_token': 'refresh',
+    'token_type': 'bearer',
+    'expires_in': 3600,
+    'user': {
+      'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'aud': 'authenticated',
+      'phone': '919876543210',
+      'created_at': '2026-10-07T10:00:00Z',
+      'app_metadata': {},
+      'user_metadata': {},
+    },
+  };
+}
+
 class SlowTelemetry extends TelemetryRepository {
   final completion = Completer<void>();
   bool called = false;
@@ -66,6 +93,158 @@ class AuthorizedTestAdmin extends AuthRepository {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'New driver saves vehicle details and user profile before dashboard',
+    (tester) async {
+      final auth = AuthRepository(mockMode: true);
+      await auth.signInWithOtp(phone: '9876543210', role: 'driver');
+      await auth.verifyOTP(phone: '9876543210', token: '123456');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CompleteProfileScreen(phone: '+919876543210', repository: auth),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('complete-name')),
+        'Ramesh',
+      );
+      await tester.tap(find.byKey(const ValueKey('complete-driver')));
+      await tester.tap(find.byKey(const ValueKey('complete-profile')));
+      await tester.pumpAndSettle();
+      expect(auth.currentProfile, isNull);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const ValueKey('driver-name')))
+            .controller!
+            .text,
+        'Ramesh',
+      );
+      for (final field in {
+        'driver-vehicle-number': 'AP 39 AB 1234',
+        'driver-capacity': '1.5',
+      }.entries) {
+        await tester.ensureVisible(find.byKey(ValueKey(field.key)));
+        await tester.enterText(find.byKey(ValueKey(field.key)), field.value);
+      }
+      final picker = find.byType(DropdownButtonFormField<String>);
+      await tester.ensureVisible(picker);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      final village = find.text(
+        '${KolleruVillages.find('pulaparru')!.label} (Mandavalli)',
+      );
+      await tester.scrollUntilVisible(
+        village,
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(village.last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('register-driver')));
+      await tester.tap(find.byKey(const ValueKey('register-driver')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DriverDashboardScreen), findsOneWidget);
+      expect(auth.currentProfile!.role, 'driver');
+      expect(auth.currentProfile!.name, 'Ramesh');
+      expect(
+        (await LocalDriverRepository().getProfile())!.phone,
+        '+919876543210',
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  test('Missing remote profile is null after OTP, then self registration persists it', () async {
+    Map<String, dynamic>? profile;
+    final client = mockClient((request) async {
+      if (request.url.path.endsWith('/otp')) return response({});
+      if (request.url.path.endsWith('/verify')) return response(otpSession());
+      expect(request.url.path, '/rest/v1/user_profiles');
+      if (request.method == 'POST') {
+        final row = jsonDecode(request.body) as Map;
+        expect(row['user_id'], 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+        profile = {
+          'phone': row['phone'],
+          'name': row['name'],
+          'role': row['role'],
+        };
+        return response(profile!);
+      }
+      expect(request.headers['accept'], 'application/json');
+      return response(profile == null ? [] : [profile]);
+    });
+    final auth = AuthRepository(client: client);
+    await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+    expect(await auth.verifyOTP(phone: '9876543210', token: '123456'), isNull);
+    expect(auth.onboardingPhone, '+919876543210');
+    expect(await auth.getRole('9876543210'), isNull);
+    expect(await auth.isLiveAdmin(), false);
+    final saved = await auth.createUserProfile(
+      phone: '9876543210',
+      name: ' Farmer ',
+      role: 'shipper',
+    );
+    expect(saved.name, 'Farmer');
+    expect(saved.role, 'shipper');
+    expect(auth.onboardingPhone, isNull);
+    expect((await auth.restoreSession())!.name, 'Farmer');
+  });
+  test(
+    'Profile creation requires verified phone and never allows admin signup',
+    () async {
+      final auth = AuthRepository(mockMode: true);
+      await expectLater(
+        auth.createUserProfile(
+          phone: '9876543210',
+          name: 'Farmer',
+          role: 'shipper',
+        ),
+        throwsStateError,
+      );
+      await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+      await auth.verifyOTP(phone: '9876543210', token: '123456');
+      final restarted = AuthRepository(mockMode: true);
+      expect(await restarted.restoreSession(), isNull);
+      expect(restarted.onboardingPhone, '+919876543210');
+      await expectLater(
+        auth.createUserProfile(
+          phone: '9876543210',
+          name: 'Farmer',
+          role: 'admin',
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        auth.createUserProfile(
+          phone: '9999999999',
+          name: 'Farmer',
+          role: 'shipper',
+        ),
+        throwsStateError,
+      );
+    },
+  );
+  testWidgets('New shipper completes name and role and reaches the directory', (
+    tester,
+  ) async {
+    final auth = AuthRepository(mockMode: true);
+    await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+    await auth.verifyOTP(phone: '9876543210', token: '123456');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CompleteProfileScreen(phone: '+919876543210', repository: auth),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('complete-name')),
+      'Farmer',
+    );
+    await tester.tap(find.byKey(const ValueKey('complete-profile')));
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeDirectoryScreen), findsOneWidget);
+    expect(auth.currentProfile!.name, 'Farmer');
+    expect(auth.currentProfile!.role, 'shipper');
+    await tester.pumpWidget(const SizedBox());
+  });
   test('Admin snapshot uses exact counts, India day bounds, and limited newest calls', () async {
     final client = mockClient((request) async {
       if (request.url.path.endsWith('/call_telemetry')) {
@@ -118,7 +297,12 @@ void main() {
       auth.verifyOTP(phone: '9876543210', token: '000000'),
       throwsFormatException,
     );
-    final profile = await auth.verifyOTP(phone: '9876543210', token: '123456');
+    expect(await auth.verifyOTP(phone: '9876543210', token: '123456'), isNull);
+    final profile = await auth.createUserProfile(
+      phone: '9876543210',
+      name: 'Ramesh',
+      role: 'driver',
+    );
     expect(profile.phone, '+919876543210');
     final restarted = AuthRepository(mockMode: true);
     expect((await restarted.restoreSession())!.role, 'driver');
@@ -194,7 +378,7 @@ void main() {
       final auth = AuthRepository(client: client, mockMode: false);
       await auth.signInWithOtp(phone: '9876543210', role: 'driver');
       expect(
-        (await auth.verifyOTP(phone: '9876543210', token: '123456')).role,
+        (await auth.verifyOTP(phone: '9876543210', token: '123456'))!.role,
         'shipper',
       );
       expect(
@@ -310,10 +494,14 @@ void main() {
       await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
       await tester.tap(find.byKey(const ValueKey('verify-otp')));
       await tester.pumpAndSettle();
-      expect(verified!.role, 'driver');
-      await tester.pumpWidget(
-        MaterialApp(home: RoleDestination(profile: verified!)),
+      expect(verified, isNull);
+      expect(find.byType(CompleteProfileScreen), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('complete-name')),
+        'Ramesh',
       );
+      await tester.tap(find.byKey(const ValueKey('complete-driver')));
+      await tester.tap(find.byKey(const ValueKey('complete-profile')));
       await tester.pumpAndSettle();
       expect(find.byType(DriverRegistrationScreen), findsOneWidget);
       expect(
