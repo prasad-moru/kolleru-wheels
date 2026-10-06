@@ -3,11 +3,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kolleru_wheels/main.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
+import 'package:kolleru_wheels/core/constants/app_strings.dart';
 import 'package:kolleru_wheels/data/models/vehicle_type.dart';
 import 'package:kolleru_wheels/data/repositories/mock_directory_repository.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets(
+    'Selected village displays available drivers in three proximity sections',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'directory_village_id': 'kovvadalanka',
+      });
+      await tester.pumpWidget(const KolleruWheelsApp());
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text(AppStrings.tierLocal), 200);
+      expect(find.text(AppStrings.tierLocal), findsOneWidget);
+      await tester.scrollUntilVisible(find.text(AppStrings.tierMandal), 200);
+      expect(find.text(AppStrings.tierMandal), findsOneWidget);
+      await tester.scrollUntilVisible(find.text(AppStrings.tierDelta), 200);
+      expect(find.text(AppStrings.tierDelta), findsOneWidget);
+      await tester.scrollUntilVisible(find.text(AppStrings.busyDrivers), 200);
+      expect(find.text(AppStrings.busyDrivers), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   test('Unique villages and driver filtering', () {
     expect(KolleruVillages.all.length, 26);
     expect(KolleruVillages.all.map((v) => v.id).toSet().length, 26);
@@ -32,6 +52,10 @@ void main() {
     await tester.pumpWidget(const KolleruWheelsApp());
     await tester.pumpAndSettle();
     expect(find.text('Kolleru Wheels'), findsOneWidget);
+    await tester.ensureVisible(
+      find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
     );

@@ -4,15 +4,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
+import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
+import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
 import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
 import '../driver/driver_mode_screen.dart';
+import 'post_load_bottom_sheet.dart';
 
 class HomeDirectoryScreen extends StatefulWidget {
   const HomeDirectoryScreen({
@@ -20,10 +23,12 @@ class HomeDirectoryScreen extends StatefulWidget {
     this.repository,
     this.localDriverRepository,
     this.onDriverMode,
+    this.loadRequestRepository,
   });
   final DirectoryRepository? repository;
   final LocalDriverRepository? localDriverRepository;
   final VoidCallback? onDriverMode;
+  final LoadRequestRepository? loadRequestRepository;
   @override
   State<HomeDirectoryScreen> createState() => _HomeDirectoryScreenState();
 }
@@ -68,10 +73,29 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DriverModeScreen(repository: _localRepository),
+        builder: (_) => DriverModeScreen(
+          repository: _localRepository,
+          loadRequestRepository: widget.loadRequestRepository,
+        ),
       ),
     );
     if (mounted) await _loadLocalProfile();
+  }
+
+  Future<void> _postLoad() async {
+    final posted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => PostLoadBottomSheet(
+        repository:
+            widget.loadRequestRepository ?? LoadRequestRepository.instance,
+        initialVillageId: _villageId,
+      ),
+    );
+    if (mounted && posted == true) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(AppStrings.postedNeed)));
+    }
   }
 
   Future<void> _restoreVillage() async {
@@ -108,19 +132,35 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   Widget build(BuildContext context) {
     final drivers = [
       ..._repository.getDrivers(
-        villageId: _villageId,
         vehicleType: _vehicle,
         availableOnly: _availableOnly,
       ),
     ];
     final local = _localProfile;
     if (local != null &&
-        (_villageId == null ||
-            local.baseVillage.id == _villageId ||
-            local.currentSpotVillage.id == _villageId) &&
         (_vehicle == null || local.vehicleType == _vehicle) &&
         (!_availableOnly || local.isAvailable)) {
       drivers.insert(0, local.toDriverModel());
+    }
+    final headings = <String, String>{};
+    if (_villageId != null) {
+      final matches = ProximityMatcher.rank(drivers, _villageId!);
+      for (final tier in ProximityTier.values) {
+        final group = matches.where((m) => m.tier == tier);
+        if (group.isNotEmpty) {
+          headings[group.first.driver.id] = switch (tier) {
+            ProximityTier.local => AppStrings.tierLocal,
+            ProximityTier.mandal => AppStrings.tierMandal,
+            ProximityTier.deltaBelt => AppStrings.tierDelta,
+          };
+        }
+      }
+      final busy = drivers.where((d) => !d.isAvailable).toList();
+      if (busy.isNotEmpty) headings[busy.first.id] = AppStrings.busyDrivers;
+      drivers
+        ..clear()
+        ..addAll(matches.map((m) => m.driver))
+        ..addAll(busy);
     }
     return Scaffold(
       appBar: AppBar(
@@ -164,6 +204,16 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
             Text(
               AppStrings.directory,
               style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const ValueKey('post-urgent-load'),
+              onPressed: _postLoad,
+              icon: const Icon(Icons.campaign, size: 28),
+              label: const Text(
+                AppStrings.urgentLoad,
+                textAlign: TextAlign.center,
+              ),
             ),
             const SizedBox(height: 12),
             const Text(AppStrings.demo),
@@ -280,7 +330,21 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                 child: const Text(AppStrings.reset),
               ),
             ],
-            for (final driver in drivers)
+            for (final driver in drivers) ...[
+              if (headings.containsKey(driver.id))
+                Container(
+                  margin: const EdgeInsets.only(top: 20, bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDFF4E8),
+                    border: Border.all(color: AppColors.charcoal, width: 2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    headings[driver.id]!,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
               Card(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
@@ -344,6 +408,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),

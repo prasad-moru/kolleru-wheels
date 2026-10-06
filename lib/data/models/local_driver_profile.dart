@@ -59,6 +59,7 @@ class LocalDriverProfile {
     phone: phone,
     village: baseVillage,
     currentSpot: currentSpotLabel,
+    currentSpotVillageId: currentSpotVillage.id,
     vehicleType: vehicleType,
     capacity: '$capacityTons టన్నులు / $capacityTons Tons',
     isAvailable: isAvailable,

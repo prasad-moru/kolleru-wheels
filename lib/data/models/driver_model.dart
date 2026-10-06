@@ -14,6 +14,7 @@ class DriverModel {
     this.isDemo = false,
     this.vehicleNumber = '',
     this.specializations = const [],
+    this.currentSpotVillageId,
   });
   final String id;
   final String name;
@@ -26,4 +27,5 @@ class DriverModel {
   final bool isDemo;
   final String vehicleNumber;
   final List<String> specializations;
+  final String? currentSpotVillageId;
 }

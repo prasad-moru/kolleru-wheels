@@ -7,6 +7,7 @@ import '../../core/constants/villages.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/local_driver_repository.dart';
+import '../../data/repositories/load_request_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../common/village_picker.dart';
 import 'driver_dashboard_screen.dart';
@@ -16,8 +17,10 @@ class DriverRegistrationScreen extends StatefulWidget {
     super.key,
     required this.repository,
     this.onRegistered,
+    this.loadRequestRepository,
   });
   final LocalDriverRepository repository;
+  final LoadRequestRepository? loadRequestRepository;
   final ValueChanged<LocalDriverProfile>? onRegistered;
   @override
   State<DriverRegistrationScreen> createState() =>
@@ -80,6 +83,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           builder: (_) => DriverDashboardScreen(
             profile: profile,
             repository: widget.repository,
+            loadRequestRepository: widget.loadRequestRepository,
           ),
         ),
       );

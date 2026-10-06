@@ -1,4 +1,33 @@
 abstract final class AppStrings {
+  static const tierLocal = 'మీ ఊరిలోనే ఉన్న వాహనాలు / Same village';
+  static const tierMandal =
+      'మండల కేంద్రంలో అందుబాటులో ఉన్నవి / Same mandal cluster';
+  static const tierDelta = 'పక్క మండలాల్లో వాహనాలు / Wider delta belt';
+  static const busyDrivers = 'ప్రస్తుతం బిజీగా ఉన్న వాహనాలు / Busy drivers';
+  static const urgentLoad = 'అత్యవసర లోడ్ / Post Urgent Load';
+  static const pickupSpot = 'లోడ్ తీసుకునే స్థలం / Pickup Spot';
+  static const dropVillage = 'దించే ఊరు / Drop Village';
+  static const shipperName = 'మీ పేరు / Shipper name';
+  static const shipperPhone = 'మీ ఫోన్ నెంబర్ / Shipper Phone';
+  static const material = 'సరుకు / Material';
+  static const materials = [
+    'ఐరన్ / రాడ్లు',
+    'సిమెంట్',
+    'పైపులు',
+    'చేపల దాణా',
+    'ఇతర సామాన్లు',
+  ];
+  static const postNeed = 'అవసరాన్ని పోస్ట్ చేయండి / Post Urgent Need';
+  static const postedNeed = 'అవసరం పోస్ట్ అయింది / Urgent need posted';
+  static const loadPool = 'రైతుల నుండి వచ్చిన లోడ్లు (Urgent Shippers)';
+  static const noLoads =
+      'ప్రస్తుతం కొత్త లోడ్ ఆర్డర్లు లేవు (No active requests nearby)';
+  static const localLoadNote =
+      'ఈ ఫోన్‌లోని లోడ్లు • 30 నిమిషాల వరకు / Loads on this phone • expire in 30 minutes';
+  static const callShipper = 'కాల్ చేయండి (Call Shipper)';
+  static const pickupRequired = 'లోడ్ స్థలం ఇవ్వండి / Enter the pickup spot';
+  static const loadFailedPool = 'లోడ్లు తెరవలేదు / Could not load requests';
+  static const justPosted = 'ఇప్పుడే / Just posted';
   static const driverMode = 'డ్రైవర్ లాగిన్ / నమోదు (Driver Mode)';
   static const registration = 'డ్రైవర్ నమోదు / Driver registration';
   static const dashboard = 'డ్రైవర్ డ్యాష్‌బోర్డ్ / Driver dashboard';

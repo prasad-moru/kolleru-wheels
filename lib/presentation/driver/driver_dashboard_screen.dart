@@ -6,18 +6,22 @@ import '../../core/constants/driver_spots.dart';
 import '../../core/constants/villages.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
+import '../../data/repositories/load_request_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../farmer/home_directory_screen.dart';
 import 'visiting_card_screen.dart';
+import 'load_pool_board.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({
     super.key,
     required this.profile,
     required this.repository,
+    this.loadRequestRepository,
   });
   final LocalDriverProfile profile;
   final LocalDriverRepository repository;
+  final LoadRequestRepository? loadRequestRepository;
   @override
   State<DriverDashboardScreen> createState() => _DriverDashboardScreenState();
 }
@@ -211,6 +215,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     MaterialPageRoute<void>(
                       builder: (context) => HomeDirectoryScreen(
                         localDriverRepository: widget.repository,
+                        loadRequestRepository: widget.loadRequestRepository,
                         onDriverMode: () => Navigator.of(context).pop(),
                       ),
                     ),
@@ -220,6 +225,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
           const SizedBox(height: 16),
           const Text(AppStrings.localProfileNote),
+          const SizedBox(height: 24),
+          LoadPoolBoard(
+            repository:
+                widget.loadRequestRepository ?? LoadRequestRepository.instance,
+          ),
         ],
       ),
     ),

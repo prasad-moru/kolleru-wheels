@@ -83,6 +83,7 @@ class MockDirectoryRepository implements DirectoryRepository {
     phone: '+91000000000$id',
     village: KolleruVillages.find(villageId)!,
     currentSpot: spot,
+    currentSpotVillageId: villageId,
     vehicleType: type,
     capacity: capacity,
     isAvailable: available,
