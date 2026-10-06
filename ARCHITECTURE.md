@@ -133,15 +133,23 @@ kolleru-wheels/
 │   │   │   ├── load_request.dart
 │   │   │   ├── load_request_model.dart
 │   │   │   ├── local_driver_profile.dart
+│   │   │   ├── user_profile_model.dart
 │   │   │   └── vehicle_type.dart
 │   │   └── repositories/
+│   │       ├── auth_repository.dart
 │   │       ├── load_request_repository.dart
 │   │       ├── local_driver_repository.dart
 │   │       ├── mock_directory_repository.dart
 │   │       ├── offline_table_store.dart
 │   │       ├── supabase_driver_repository.dart
-│   │       └── supabase_load_request_repository.dart
+│   │       ├── supabase_load_request_repository.dart
+│   │       └── telemetry_repository.dart
 │   └── presentation/
+│       ├── admin/
+│       │   └── admin_dashboard_screen.dart
+│       ├── auth/
+│       │   ├── phone_otp_screen.dart
+│       │   └── role_destination.dart
 │       ├── common/
 │       │   ├── audio_cue_button.dart
 │       │   ├── call_button.dart
@@ -156,7 +164,11 @@ kolleru-wheels/
 │       └── farmer/
 │           ├── home_directory_screen.dart
 │           └── post_load_bottom_sheet.dart
+├── supabase/
+│   └── migrations/
+│       └── 202610060001_auth_and_telemetry.sql
 ├── test/
+│   ├── auth_and_telemetry_test.dart
 │   ├── driver_onboarding_test.dart
 │   ├── load_request_test.dart
 │   ├── proximity_and_load_request_test.dart
@@ -497,4 +509,55 @@ The dashboard saves profile changes locally before cloud synchronization and sho
 
 Cloud load queries filter `is_closed = false`, `created_at >= device UTC now - 30 minutes`, and `created_at <= device UTC now`, ordered newest first. Local validation then excludes future-dated records and ages of exactly 30 minutes or more, including cached rows. Expired pending posts are discarded instead of being uploaded late. Expiry hides rows; it does not physically delete server rows. A database view/RPC or server policy is still needed for authoritative server-clock TTL enforcement.
 
-Offline posting reports that the request was saved locally and is awaiting sync; it does not claim cross-device delivery. Public-key access depends on deployed table permissions and RLS policies. This client does not add authentication or prove driver ownership, so local Driver Mode must not be treated as authorization. Schema, enum storage, uniqueness, returned-row permissions, and ownership policies must be validated against the deployed database before the pilot. No live database connection was available during automated verification.
+Offline posting reports that the request was saved locally and is awaiting sync; it does not claim cross-device delivery. Public-key access depends on deployed table permissions and RLS policies. The authentication extension in Section 12 adds phone verification; driver-row ownership policies still require deployment review. Schema, enum storage, uniqueness, returned-row permissions, and ownership policies must be validated against the deployed database before the pilot. No live database connection was available during automated verification.
+
+## 12. Phone identity, roles, call telemetry, and admin monitoring
+
+This extension keeps browsing and dialing available without login. In configured builds, Driver Mode requires a verified driver identity. The drawer offers optional phone sign-in for driver and shipper onboarding, an admin entry for server-assigned admins, and sign-out. Unconfigured builds retain the original local Driver Mode for prototype use.
+
+### Identity and navigation
+
+`UserProfile` contains normalized E.164 `phone`, `role` (`driver`, `shipper`, or `admin`), and `name`. `AuthRepository` uses Supabase `signInWithOtp` and `verifyOTP` with `OtpType.sms`. Only driver and shipper roles can be chosen publicly. The database trigger derives initial roles from these allowed choices; the client reads the authoritative profile after verification instead of granting a role from the UI.
+
+`PhoneOtpScreen` validates an Indian mobile number, prefixes `+91`, offers bilingual role chips, accepts a six-digit code, and provides a 60-second resend countdown. The timer is a resend cooldown, not the configured Supabase OTP expiry. Errors allow retry without claiming verification succeeded. Mock OTP is `123456`, lasts five minutes, and is visibly labeled as a demo that sends no SMS. Mock mode is available when credentials are unset or explicitly injected for tests; configured network failures never switch to mock verification.
+
+The Supabase Flutter SDK persists and refreshes the actual auth session in its local storage. `auth_identity_v1` stores the app's cached identity, SDK user ID, mock flag, and saved timestamp. `auth_roles_v1` stores cached role/profile records. App-owned preferences do not duplicate access/refresh tokens. Restoring a configured identity requires matching the SDK user ID and phone; mock identities are rejected in configured mode. Corrupt cache entries safely return to browsing. A successfully authenticated SDK session without an app cache can recover its profile from the server.
+
+Cached roles restore offline navigation, never authorization. `getRole(phone)` queries `user_profiles` with local fallback. Admin data additionally requires `isLiveAdmin()`, which checks the live profile for the current SDK user and refuses mock or offline-only admin access. Server RLS remains the authoritative enforcement layer.
+
+`main.dart` restores identity before rendering the application. `RoleDestination` routes drivers to `DriverModeScreen`, shippers to the directory, and admins to the monitor. Driver registration uses the verified phone as a read-only field; a profile from another phone on the device is not reused. The initial role choice applies to new accounts; existing accounts keep their server-assigned role. Signing out clears the active app identity and the local SDK session while retaining offline directory data.
+
+### Call intents
+
+`TelemetryRepository.logCallIntent` inserts `caller_phone`, `receiver_phone`, `caller_role`, and `context_note` into `call_telemetry`. `CallButton` starts logging before launching `tel:` but deliberately does not await telemetry. Network timeout or rejection is silently caught so the dialer remains responsive. Demo buttons do not launch a call or record an intent.
+
+Contexts identify directory calls, visiting-card driver IDs, or urgent-load IDs. `DriverDashboardScreen` passes the caller phone through `LoadPoolBoard` for shipper calls. Anonymous visitors are recorded with a null caller phone and `guest` role. The database trigger overwrites caller identity/role from the authenticated profile and uses server time, preventing client identity spoofing. No audio, call duration, completed-call status, contact list, GPS position, government ID, or RC is collected. Events describe taps requesting the dialer, including taps whose dialer launch fails.
+
+Telemetry is best-effort and is not queued for later upload. This avoids blocking calling or retaining a separate local call-history outbox. The sign-in screen explains call-tap logging. Limit access to administrators and define server-side retention and abuse/rate controls before field rollout, particularly for anonymous inserts.
+
+### Admin monitor
+
+`AdminDashboardScreen` performs a live authorization check before every fetch. It uses exact database counts for total drivers and available drivers, derives busy drivers, counts today's posts including closed requests, and fetches the latest 50 call intents ordered by server timestamp. Today uses the corridor's India time zone (UTC+05:30), independent of device time-zone settings. The screen supports manual refresh, refreshes every 30 seconds and on resume, and clears displayed data if authorization or fetching fails. This is polling, not a Realtime subscription. No secret tap bypass is implemented.
+
+### Database deployment contract
+
+Apply `supabase/migrations/202610060001_auth_and_telemetry.sql` once using the project's migration tooling or SQL editor. It assumes the previously deployed `drivers` and `load_requests` tables already exist. The migration creates:
+
+| Table | Fields and enforcement |
+| --- | --- |
+| `user_profiles` | `phone` primary key, unique `user_id` referencing `auth.users`, constrained `role`, and `name`. Trigger provisions allowed roles and backfills phone accounts. Authenticated clients can read their own profile; admins can read all. Clients receive no insert/update role privileges. |
+| `call_telemetry` | UUID `id`, nullable `caller_phone`, `receiver_phone`, `caller_role`, `context_note`, server `created_at`, and timestamp index. Anonymous/authenticated clients may insert; only admins may read. Server trigger stamps trusted caller identity and time. |
+
+Additional admin SELECT policies let the monitor count busy drivers and closed loads. The migration does not replace existing directory/load ownership policies, introduce payment handling, or grant client service-role access. Provision admins only from trusted SQL/service-role tooling after their phone account exists, for example:
+
+```sql
+update public.user_profiles set role = 'admin' where phone = '+91YOUR_ADMIN_NUMBER';
+```
+
+Enable Supabase Phone Auth and configure its SMS provider before testing real OTP delivery. Deployments with existing profile/telemetry tables must reconcile this migration with their actual schema and policies first. The migration is supplied locally; no remote SQL, admin promotion, or SMS configuration was performed by this implementation.
+
+### Verification and remaining boundaries
+
+`test/auth_and_telemetry_test.dart` covers mock OTP validation, resend/expiry, persistence, sign-out, SMS verification through mocked Supabase HTTP, authoritative roles, corrupt caches, configured-auth failure without bypass, telemetry schema/rejection, nonblocking dialer launch, role navigation, offline admin refusal, and exact admin queries with India-day boundaries. These checks do not validate live SMS delivery or execute the PostgreSQL migration.
+
+Phases 1–4 remain implemented; Phase 5 now includes SDK integration plus phone authentication and admin monitoring. FCM, live schema/RLS verification, driver/load ownership enforcement review, authoritative server expiry, telemetry retention, and on-ground testing remain outstanding.

@@ -4,6 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/constants/supabase_config.dart';
 import 'data/repositories/load_request_repository.dart';
 import 'data/repositories/supabase_load_request_repository.dart';
+import 'data/repositories/auth_repository.dart';
+import 'data/models/user_profile_model.dart';
+import 'presentation/auth/role_destination.dart';
 
 import 'core/theme/app_theme.dart';
 import 'presentation/farmer/home_directory_screen.dart';
@@ -22,16 +25,20 @@ Future<void> main() async {
     }
   }
   LoadRequestRepository.instance = SupabaseLoadRequestRepository();
-  runApp(const KolleruWheelsApp());
+  final profile = await AuthRepository.instance.restoreSession();
+  runApp(KolleruWheelsApp(initialProfile: profile));
 }
 
 class KolleruWheelsApp extends StatelessWidget {
-  const KolleruWheelsApp({super.key});
+  const KolleruWheelsApp({super.key, this.initialProfile});
+  final UserProfile? initialProfile;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Kolleru Wheels',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    home: const HomeDirectoryScreen(),
+    home: initialProfile == null
+        ? const HomeDirectoryScreen()
+        : RoleDestination(profile: initialProfile!),
   );
 }

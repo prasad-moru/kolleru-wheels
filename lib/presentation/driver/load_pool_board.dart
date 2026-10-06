@@ -15,9 +15,11 @@ class LoadPoolBoard extends StatefulWidget {
     super.key,
     required this.repository,
     this.operationalMandalId,
+    this.callerPhone,
   });
   final LoadRequestRepository repository;
   final String? operationalMandalId;
+  final String? callerPhone;
   @override
   State<LoadPoolBoard> createState() => _LoadPoolBoardState();
 }
@@ -200,6 +202,9 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
                     CallButton(
                       phone: request.posterPhone,
                       label: AppStrings.callShipper,
+                      callerPhone: widget.callerPhone,
+                      callerRole: 'driver',
+                      contextNote: 'urgent_load:${request.id}',
                     ),
                   ],
                 ),

@@ -19,8 +19,10 @@ class DriverRegistrationScreen extends StatefulWidget {
     required this.repository,
     this.onRegistered,
     this.loadRequestRepository,
+    this.verifiedPhone,
   });
   final LocalDriverRepository repository;
+  final String? verifiedPhone;
   final LoadRequestRepository? loadRequestRepository;
   final ValueChanged<LocalDriverProfile>? onRegistered;
   @override
@@ -38,6 +40,14 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   VehicleType _vehicle = VehicleType.boleroPickup;
   String? _villageId;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.verifiedPhone != null) {
+      _phone.text = widget.verifiedPhone!.substring(3);
+    }
+  }
 
   @override
   void dispose() {
@@ -128,6 +138,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                 TextFormField(
                   key: const ValueKey('driver-phone'),
                   controller: _phone,
+                  readOnly: widget.verifiedPhone != null,
                   keyboardType: TextInputType.phone,
                   autofillHints: const [AutofillHints.telephoneNumberNational],
                   inputFormatters: [

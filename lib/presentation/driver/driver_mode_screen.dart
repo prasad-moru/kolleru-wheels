@@ -13,9 +13,11 @@ class DriverModeScreen extends StatefulWidget {
     super.key,
     required this.repository,
     this.loadRequestRepository,
+    this.verifiedPhone,
   });
   final LocalDriverRepository repository;
   final LoadRequestRepository? loadRequestRepository;
+  final String? verifiedPhone;
   @override
   State<DriverModeScreen> createState() => _DriverModeScreenState();
 }
@@ -57,9 +59,14 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
           body: const Center(child: CircularProgressIndicator()),
         );
       }
-      final profile = snapshot.data;
+      final saved = snapshot.data;
+      final profile =
+          widget.verifiedPhone == null || saved?.phone == widget.verifiedPhone
+          ? saved
+          : null;
       return profile == null
           ? DriverRegistrationScreen(
+              verifiedPhone: widget.verifiedPhone,
               repository: widget.repository,
               loadRequestRepository: widget.loadRequestRepository,
               onRegistered: (profile) => setState(() {

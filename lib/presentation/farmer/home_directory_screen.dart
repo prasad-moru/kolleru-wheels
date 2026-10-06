@@ -14,6 +14,10 @@ import '../../data/repositories/offline_table_store.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../auth/phone_otp_screen.dart';
+import '../auth/role_destination.dart';
+import '../admin/admin_dashboard_screen.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
 import '../common/vehicle_badge.dart';
@@ -104,10 +108,19 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       widget.onDriverMode!();
       return;
     }
+    if (!AuthRepository.instance.isMock &&
+        AuthRepository.instance.currentProfile?.role != 'driver') {
+      await _openSignIn();
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => DriverModeScreen(
           repository: _localRepository,
+          verifiedPhone:
+              AuthRepository.instance.currentProfile?.role == 'driver'
+              ? AuthRepository.instance.currentProfile?.phone
+              : null,
           loadRequestRepository: widget.loadRequestRepository,
         ),
       ),
@@ -116,6 +129,21 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       await _loadLocalProfile();
       await _fetchDrivers();
     }
+  }
+
+  Future<void> _openSignIn() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PhoneOtpScreen(
+          onVerified: (profile) => Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => RoleDestination(profile: profile),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _postLoad() async {
@@ -258,6 +286,41 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                   _openDriverMode();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.verified_user),
+                title: const Text('OTP లాగిన్ / Phone sign-in'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _openSignIn();
+                },
+              ),
+              if (AuthRepository.instance.currentProfile?.role == 'admin')
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings),
+                  title: const Text('అడ్మిన్ / Admin Monitor'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminDashboardScreen(),
+                      ),
+                    );
+                  },
+                ),
+              if (AuthRepository.instance.currentProfile != null)
+                ListTile(
+                  leading: const Icon(Icons.logout),
+                  title: const Text('లాగ్ అవుట్ / Sign out'),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    try {
+                      await AuthRepository.instance.signOut();
+                    } catch (_) {
+                      /* Local identity has been cleared. */
+                    }
+                    if (mounted) setState(() {});
+                  },
+                ),
             ],
           ),
         ),

@@ -9,6 +9,7 @@ import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/supabase_driver_repository.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../farmer/home_directory_screen.dart';
 import 'visiting_card_screen.dart';
@@ -115,7 +116,30 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text(AppStrings.dashboard)),
+    appBar: AppBar(
+      title: const Text(AppStrings.dashboard),
+      actions: [
+        if (AuthRepository.instance.currentProfile != null)
+          IconButton(
+            tooltip: 'లాగ్ అవుట్ / Sign out',
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              try {
+                await AuthRepository.instance.signOut();
+              } catch (_) {
+                /* Local sign-out completed. */
+              }
+              if (!context.mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute<void>(
+                  builder: (_) => const HomeDirectoryScreen(),
+                ),
+                (_) => false,
+              );
+            },
+          ),
+      ],
+    ),
     body: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -250,6 +274,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             ),
           const SizedBox(height: 24),
           LoadPoolBoard(
+            callerPhone: _profile.phone,
             operationalMandalId:
                 ProximityMatcher.mandalId(_profile.currentSpotVillage.id) ??
                 ProximityMatcher.mandalId(_profile.baseVillage.id),
