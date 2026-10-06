@@ -5,21 +5,34 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
 import '../../data/models/vehicle_type.dart';
+import '../../data/models/local_driver_profile.dart';
+import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
 import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
+import '../driver/driver_mode_screen.dart';
 
 class HomeDirectoryScreen extends StatefulWidget {
-  const HomeDirectoryScreen({super.key, this.repository});
+  const HomeDirectoryScreen({
+    super.key,
+    this.repository,
+    this.localDriverRepository,
+    this.onDriverMode,
+  });
   final DirectoryRepository? repository;
+  final LocalDriverRepository? localDriverRepository;
+  final VoidCallback? onDriverMode;
   @override
   State<HomeDirectoryScreen> createState() => _HomeDirectoryScreenState();
 }
 
 class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   late final DirectoryRepository _repository;
+  late final LocalDriverRepository _localRepository;
+  LocalDriverProfile? _localProfile;
+  bool _profileLoadFailed = false;
   String? _villageId;
   VehicleType? _vehicle;
   bool _availableOnly = false;
@@ -29,7 +42,36 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   void initState() {
     super.initState();
     _repository = widget.repository ?? MockDirectoryRepository();
+    _localRepository = widget.localDriverRepository ?? LocalDriverRepository();
+    _loadLocalProfile();
     _restoreVillage();
+  }
+
+  Future<void> _loadLocalProfile() async {
+    try {
+      final profile = await _localRepository.getProfile();
+      if (mounted) {
+        setState(() {
+          _localProfile = profile;
+          _profileLoadFailed = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _profileLoadFailed = true);
+    }
+  }
+
+  Future<void> _openDriverMode() async {
+    if (widget.onDriverMode != null) {
+      widget.onDriverMode!();
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverModeScreen(repository: _localRepository),
+      ),
+    );
+    if (mounted) await _loadLocalProfile();
   }
 
   Future<void> _restoreVillage() async {
@@ -64,13 +106,57 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final drivers = _repository.getDrivers(
-      villageId: _villageId,
-      vehicleType: _vehicle,
-      availableOnly: _availableOnly,
-    );
+    final drivers = [
+      ..._repository.getDrivers(
+        villageId: _villageId,
+        vehicleType: _vehicle,
+        availableOnly: _availableOnly,
+      ),
+    ];
+    final local = _localProfile;
+    if (local != null &&
+        (_villageId == null ||
+            local.baseVillage.id == _villageId ||
+            local.currentSpotVillage.id == _villageId) &&
+        (_vehicle == null || local.vehicleType == _vehicle) &&
+        (!_availableOnly || local.isAvailable)) {
+      drivers.insert(0, local.toDriverModel());
+    }
     return Scaffold(
-      appBar: AppBar(title: const Text('Kolleru Wheels')),
+      appBar: AppBar(
+        title: const Text('Kolleru Wheels'),
+        actions: [
+          IconButton(
+            key: const ValueKey('driver-mode'),
+            tooltip: AppStrings.driverMode,
+            onPressed: _openDriverMode,
+            icon: const Icon(Icons.person_pin),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Kolleru Wheels',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_pin),
+                title: const Text(AppStrings.driverMode),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _openDriverMode();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -81,6 +167,13 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
             ),
             const SizedBox(height: 12),
             const Text(AppStrings.demo),
+            if (_profileLoadFailed)
+              TextButton(
+                onPressed: _loadLocalProfile,
+                child: const Text(
+                  '${AppStrings.loadFailed} — ${AppStrings.retry}',
+                ),
+              ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               key: ValueKey(_villageId),
@@ -223,6 +316,9 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                           ],
                         ),
                         Text(driver.village.label),
+                        Text(
+                          '${AppStrings.currentSpot}: ${driver.currentSpot}',
+                        ),
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.all(8),
