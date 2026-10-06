@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/driver_spots.dart';
 import '../../core/constants/villages.dart';
+import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
@@ -227,6 +228,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           const Text(AppStrings.localProfileNote),
           const SizedBox(height: 24),
           LoadPoolBoard(
+            operationalMandalId:
+                ProximityMatcher.mandalId(_profile.currentSpotVillage.id) ??
+                ProximityMatcher.mandalId(_profile.baseVillage.id),
             repository:
                 widget.loadRequestRepository ?? LoadRequestRepository.instance,
           ),

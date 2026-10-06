@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/load_request_model.dart';
 import '../models/vehicle_type.dart';
 import '../../core/constants/villages.dart';
+import '../../core/utils/proximity_matcher.dart';
 
 /// Shared locally across farmer and driver views. A backend is needed for
 /// requests from other phones; writes notify listeners only after persistence.
@@ -68,15 +69,17 @@ class LoadRequestRepository extends ChangeNotifier {
     required String posterName,
     required String posterPhone,
     required String fromLocation,
-    required String toVillageId,
+    String? toVillageId,
+    Village? toVillage,
     required String materialType,
     VehicleType? vehicleTypeNeeded,
   }) => _serial(() async {
+    final destinationId = toVillage?.id ?? toVillageId;
     if (posterName.trim().isEmpty ||
         !RegExp(r'^\+91[6-9][0-9]{9}$').hasMatch(posterPhone) ||
         fromLocation.trim().isEmpty ||
         materialType.trim().isEmpty ||
-        KolleruVillages.find(toVillageId) == null) {
+        KolleruVillages.find(destinationId) == null) {
       throw const FormatException('Invalid urgent request');
     }
     await _load();
@@ -87,7 +90,7 @@ class LoadRequestRepository extends ChangeNotifier {
       posterName: posterName.trim(),
       posterPhone: posterPhone,
       fromLocation: fromLocation.trim(),
-      toVillageId: toVillageId,
+      toVillageId: destinationId!,
       materialType: materialType.trim(),
       vehicleTypeNeeded: vehicleTypeNeeded,
       createdAt: now,
@@ -96,11 +99,22 @@ class LoadRequestRepository extends ChangeNotifier {
     return request;
   });
 
-  Future<List<LoadRequestModel>> getActiveRequests() => _serial(() async {
+  Future<List<LoadRequestModel>> getActiveRequests({
+    String? operationalMandalId,
+  }) => _serial(() async {
     await _load();
     final now = _now();
-    final active = _requests!.where((r) => r.isActiveAt(now)).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final active =
+        _requests!
+            .where(
+              (r) =>
+                  r.isActiveAt(now) &&
+                  (operationalMandalId == null ||
+                      ProximityMatcher.mandalId(r.toVillageId) ==
+                          operationalMandalId),
+            )
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return List.unmodifiable(active);
   });
 

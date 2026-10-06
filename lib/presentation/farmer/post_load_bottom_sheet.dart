@@ -60,7 +60,7 @@ class _PostLoadBottomSheetState extends State<PostLoadBottomSheet> {
             : _name.text.trim(),
         posterPhone: '+91${_digits(_phone.text)}',
         fromLocation: _pickup.text.trim(),
-        toVillageId: _drop!,
+        toVillage: KolleruVillages.find(_drop)!,
         materialType: _material,
         vehicleTypeNeeded: _vehicle,
       );

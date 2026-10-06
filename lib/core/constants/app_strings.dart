@@ -1,10 +1,9 @@
 abstract final class AppStrings {
-  static const tierLocal = 'మీ ఊరిలోనే ఉన్న వాహనాలు / Same village';
-  static const tierMandal =
-      'మండల కేంద్రంలో అందుబాటులో ఉన్నవి / Same mandal cluster';
-  static const tierDelta = 'పక్క మండలాల్లో వాహనాలు / Wider delta belt';
+  static const tierLocal = 'మీ ఊరిలోనే ఉన్న వాహనాలు (In your village)';
+  static const tierMandal = 'మండల కేంద్రంలో అందుబాటులో ఉన్నవి (In Mandal hub)';
+  static const tierDelta = 'చుట్టుపక్కల మండలాలు (Nearby Mandals)';
   static const busyDrivers = 'ప్రస్తుతం బిజీగా ఉన్న వాహనాలు / Busy drivers';
-  static const urgentLoad = 'అత్యవసర లోడ్ / Post Urgent Load';
+  static const urgentLoad = 'అత్యవసర లోడ్ పోస్ట్ చేయండి (Post Urgent Load)';
   static const pickupSpot = 'లోడ్ తీసుకునే స్థలం / Pickup Spot';
   static const dropVillage = 'దించే ఊరు / Drop Village';
   static const shipperName = 'మీ పేరు / Shipper name';
@@ -19,7 +18,9 @@ abstract final class AppStrings {
   ];
   static const postNeed = 'అవసరాన్ని పోస్ట్ చేయండి / Post Urgent Need';
   static const postedNeed = 'అవసరం పోస్ట్ అయింది / Urgent need posted';
-  static const loadPool = 'రైతుల నుండి వచ్చిన లోడ్లు (Urgent Shippers)';
+  static const loadPool = 'రైతుల అత్యవసర లోడ్లు (Urgent Shippers)';
+  static const mandalLoadNote =
+      'మీ ప్రస్తుత మండలానికి వచ్చే లోడ్లు / Loads delivering to your current mandal';
   static const noLoads =
       'ప్రస్తుతం కొత్త లోడ్ ఆర్డర్లు లేవు (No active requests nearby)';
   static const localLoadNote =

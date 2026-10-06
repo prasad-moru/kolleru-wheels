@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../core/constants/villages.dart';
+import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../common/call_button.dart';
 
 class LoadPoolBoard extends StatefulWidget {
-  const LoadPoolBoard({super.key, required this.repository});
+  const LoadPoolBoard({
+    super.key,
+    required this.repository,
+    this.operationalMandalId,
+  });
   final LoadRequestRepository repository;
+  final String? operationalMandalId;
   @override
   State<LoadPoolBoard> createState() => _LoadPoolBoardState();
 }
@@ -45,6 +50,8 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
       oldWidget.repository.removeListener(_refresh);
       widget.repository.addListener(_refresh);
       _refresh();
+    } else if (widget.operationalMandalId != oldWidget.operationalMandalId) {
+      _refresh();
     }
   }
 
@@ -56,7 +63,9 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
   Future<void> _refresh() async {
     final revision = ++_revision;
     try {
-      final requests = await widget.repository.getActiveRequests();
+      final requests = await widget.repository.getActiveRequests(
+        operationalMandalId: widget.operationalMandalId,
+      );
       if (!mounted || revision != _revision) return;
       setState(() {
         _requests = requests;
@@ -107,7 +116,13 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
   Widget build(BuildContext context) {
     final now = widget.repository.currentTime;
     // Filter at build as well, so resumed/rebuilt views never display stale loads.
-    final requests = _requests.where((r) => r.isActiveAt(now));
+    final requests = _requests.where(
+      (r) =>
+          r.isActiveAt(now) &&
+          (widget.operationalMandalId == null ||
+              ProximityMatcher.mandalId(r.toVillageId) ==
+                  widget.operationalMandalId),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -117,6 +132,8 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
         ),
         const SizedBox(height: 8),
         const Text(AppStrings.localLoadNote),
+        if (widget.operationalMandalId != null)
+          const Text(AppStrings.mandalLoadNote),
         if (_loading)
           const LinearProgressIndicator()
         else if (_failed)
@@ -151,7 +168,7 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
                       color: AppColors.charcoal,
                     ),
                     Text(
-                      '${request.fromLocation} ➔ ${KolleruVillages.find(request.toVillageId)!.label}',
+                      '${request.fromLocation} ➔ ${request.toVillage.label}',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 8),

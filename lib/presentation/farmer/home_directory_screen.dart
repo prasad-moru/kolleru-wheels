@@ -144,22 +144,25 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
     final headings = <String, String>{};
     if (_villageId != null) {
-      final matches = ProximityMatcher.rank(drivers, _villageId!);
-      for (final tier in ProximityTier.values) {
-        final group = matches.where((m) => m.tier == tier);
-        if (group.isNotEmpty) {
-          headings[group.first.driver.id] = switch (tier) {
-            ProximityTier.local => AppStrings.tierLocal,
-            ProximityTier.mandal => AppStrings.tierMandal,
-            ProximityTier.deltaBelt => AppStrings.tierDelta,
-          };
+      final result = ProximityMatcher.match(
+        drivers,
+        KolleruVillages.find(_villageId)!,
+      );
+      final sections = {
+        AppStrings.tierLocal: result.tier1,
+        AppStrings.tierMandal: result.tier2,
+        AppStrings.tierDelta: result.tier3,
+      };
+      for (final section in sections.entries) {
+        if (section.value.isNotEmpty) {
+          headings[section.value.first.id] = section.key;
         }
       }
       final busy = drivers.where((d) => !d.isAvailable).toList();
       if (busy.isNotEmpty) headings[busy.first.id] = AppStrings.busyDrivers;
       drivers
         ..clear()
-        ..addAll(matches.map((m) => m.driver))
+        ..addAll([...result.tier1, ...result.tier2, ...result.tier3])
         ..addAll(busy);
     }
     return Scaffold(

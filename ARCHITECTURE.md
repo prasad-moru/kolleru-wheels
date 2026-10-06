@@ -155,6 +155,7 @@ kolleru-wheels/
 ├── test/
 │   ├── driver_onboarding_test.dart
 │   ├── load_request_test.dart
+│   ├── proximity_and_load_request_test.dart
 │   ├── proximity_matcher_test.dart
 │   ├── visiting_card_test.dart
 │   └── widget_test.dart
@@ -253,7 +254,7 @@ Caret constraints are declared requirements, not exact resolved versions. `pubsp
 
 **Registered driver fields:** `id`, `name`, `phone`, `baseVillage`, `currentSpotVillage`, `currentSpotLabel`, `vehicleType`, `capacityTons`, `specializations`, `vehicleNumber`, and `isAvailable`. Village objects are serialized as village IDs. The label allows a hub such as Kaikaluru Adda to retain its identity while ranking against `kaikaluru-town`.
 
-**Urgent-load fields:** `id`, `posterName`, `posterPhone`, `fromLocation`, `toVillageId`, `materialType`, nullable `vehicleTypeNeeded`, `createdAt`, and `status` (`open`/`closed`). `createdAt` is serialized as UTC ISO 8601. A null vehicle requirement means any vehicle. Pickup is a free-text spot, not a structured village or GPS coordinate.
+**Urgent-load fields:** `id`, `posterName`, `posterPhone`, `fromLocation`, `toVillage`, `materialType`, nullable `vehicleTypeNeeded`, `createdAt`, and `isClosed`. The model exposes the destination as a `Village` and serializes it as a stable village ID. Compatibility accessors/JSON fields retain `toVillageId` and `status` (`open`/`closed`), and older persisted records still decode. `createdAt` is serialized as UTC ISO 8601. A null vehicle requirement means any vehicle. Pickup is a free-text spot, not a structured village or GPS coordinate.
 
 Registration requires a name of at least two trimmed characters, a normalized Indian mobile number, a conventional vehicle-registration format, a selected village, and finite capacity greater than zero and at most 100 tons. These validations check input shape; they do not verify ownership, registration validity, road fitness, or permissible payload. Specializations are optional selections: iron rods, cement, live fish, and paddy.
 
@@ -283,13 +284,13 @@ The current workflow manages one local driver profile on a phone. It does not cr
 
 ### 6.2 Three-tier proximity matching engine
 
-`ProximityMatcher.rank(drivers, selectedVillageId)` assigns available drivers to the best qualifying tier:
+`ProximityMatcher.match(drivers, selectedVillage)` returns an immutable `ProximityResult` containing `tier1`, `tier2`, and `tier3` driver lists. The existing `rank(drivers, selectedVillageId)` API remains compatible. Both assign available drivers to the best qualifying tier:
 
 | Priority | Tier | Predicate | Directory heading |
 | --- | --- | --- | --- |
-| 1 | Same village / Local | Current-spot village **or** base village equals the selected village. | మీ ఊరిలోనే ఉన్న వాహనాలు / Same village |
-| 2 | Same mandal / Mandal hub | No Tier 1 match; current-spot village **or** base village belongs to the selected village’s mandal cluster. | మండల కేంద్రంలో అందుబాటులో ఉన్నవి / Same mandal cluster |
-| 3 | Adjacent-mandal product concept / Delta belt | No higher-tier match; a known base/current village is in another supported Kolleru cluster. | పక్క మండలాల్లో వాహనాలు / Wider delta belt |
+| 1 | Same village / Local | Current-spot village **or** base village equals the selected village. | మీ ఊరిలోనే ఉన్న వాహనాలు (In your village) |
+| 2 | Same mandal / Mandal hub | No Tier 1 match; current-spot village **or** base village belongs to the selected village’s mandal cluster. | మండల కేంద్రంలో అందుబాటులో ఉన్నవి (In Mandal hub) |
+| 3 | Adjacent-mandal product concept / Delta belt | No higher-tier match; a known base/current village is in another supported Kolleru cluster. | చుట్టుపక్కల మండలాలు (Nearby Mandals) |
 
 Current Tier 3 is a **wider-belt fallback**, not an explicit map of adjacent mandal boundaries. Tier 2 establishes same-cluster membership, not proof that a vehicle is parked at the mandal’s administrative center. Labels should be interpreted as discovery groupings; actual location is shown separately.
 
@@ -332,14 +333,14 @@ The accompanying text is: “నా కొల్లేరు వీల్స్ 
 5. The sheet closes on success and the directory shows confirmation. A failed write keeps the form available with an error.
 6. `LoadPoolBoard` reads active requests newest first and displays route, material icon/type, requested vehicle when specified, shipper name, elapsed time, and a large Call Shipper button.
 
-The default pool is shared by farmer and driver views **on this phone**. The board currently displays all active local requests; it does not filter pickup proximity or vehicle eligibility. Destination is structured but pickup is free text, so reliable pickup-based matching requires a future structured origin field. Entering a vehicle requirement informs the driver but does not automatically allocate or enforce a match.
+The default pool is shared by farmer and driver views **on this phone**. The dashboard filters active requests whose destination village belongs to the driver's operational mandal, determined from the current-spot village with base-village fallback. The board labels this as loads delivering to the current mandal and refreshes when that mandal changes. `getActiveRequests(operationalMandalId: ...)` supplies this filter; omitting it returns the full active local pool. Pickup proximity and vehicle eligibility are not filtered. Destination is structured but pickup is free text, so reliable pickup-based matching requires a future structured origin field. Entering a vehicle requirement informs the driver but does not automatically allocate or enforce a match.
 
 ### 6.5 Thirty-minute TTL and lifecycle
 
 The active predicate is:
 
 ```text
-status == open
+isClosed == false
 AND createdAt <= now
 AND now < createdAt + 30 minutes
 ```
@@ -389,7 +390,7 @@ Before shared production publication, design explicit contact-publication consen
 | Phase 5 — Free-tier Backend & FCM Broadcast | Planned | Evaluate a low-cost/free-tier-capable backend; shared directory/load storage; controlled mandal topic notifications. | Choose provider using current quotas and projected usage; implement authorization, timestamps, TTL filtering, consent, retries, and monitoring. No provider or cost guarantee is committed. |
 | Phase 6 — APK Generation & On-Ground Pilot | Planned | Release signing/build, installation, and field trials across merchants, owners, and farmers. | Verify release configuration, permissions, physical-device behavior, outdoor readability, weak connectivity, route access, and user comprehension. |
 
-The latest code verification preceding this document passed `flutter analyze` with no issues and `flutter test` with **28 passing tests**. That result validates the tested local behavior, not cross-device load delivery, actual WhatsApp publication, or field performance.
+The initial code verification preceding this document passed `flutter analyze` with no issues and `flutter test` with **28 passing tests**. The subsequent Phase 4 API and operational-mandal filtering changes add regression coverage in `test/proximity_and_load_request_test.dart`; run the full suite for the current count. These checks validate local behavior, not cross-device load delivery, actual WhatsApp publication, or field performance.
 
 ## 9. Future optimizations and production evolution
 
@@ -435,6 +436,7 @@ flutter test
 | `test/visiting_card_test.dart` | All five badges at small display size, PNG signature/full-card capture, card fields, narrow-screen enlarged text, and demo-call protection. |
 | `test/driver_onboarding_test.dart` | Registration and validation, persisted fields, restart routing, concurrent partial updates, location/availability, Farmer View, corrupt data, save-failure preservation, and retry. |
 | `test/proximity_matcher_test.dart` | Tier precedence from current/base village, same-mandal grouping, wider-belt fallback, stable/deduplicated order, unavailable/unknown cases, and all village-to-mandal mappings. |
+| `test/proximity_and_load_request_test.dart` | Immutable structured tier results, deduplication, legacy/new request serialization, boolean closure, exact TTL, destination-mandal filtering, and board updates when operational mandal changes. |
 | `test/load_request_test.dart` | Exact expiry boundary, restored/closed/future records, newest-first order, concurrent creation, invalid/corrupt data, live expiry removal, posting validation/persistence, and enlarged-text/keyboard layout. |
 
 Setting `KOLLERU_RENDER_PREVIEWS=1` for the visiting-card tests writes optional PNGs under `build/previews/`. Widget-test fonts are not representative of the final phone’s Telugu typography; physical-device visual checks remain necessary.
