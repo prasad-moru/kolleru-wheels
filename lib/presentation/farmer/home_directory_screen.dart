@@ -7,6 +7,8 @@ import '../../core/constants/villages.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/mock_directory_repository.dart';
 import '../common/audio_cue_button.dart';
+import '../common/call_button.dart';
+import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
 
 class HomeDirectoryScreen extends StatefulWidget {
@@ -60,12 +62,6 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
   }
 
-  IconData _icon(VehicleType type) => switch (type) {
-    VehicleType.tractor => Icons.agriculture,
-    VehicleType.eicher14ft => Icons.local_shipping,
-    VehicleType.boleroPickup => Icons.airport_shuttle,
-    VehicleType.tataAce || VehicleType.dost => Icons.delivery_dining,
-  };
   @override
   Widget build(BuildContext context) {
     final drivers = _repository.getDrivers(
@@ -147,7 +143,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                             ),
                             child: Column(
                               children: [
-                                Icon(_icon(type), size: 40),
+                                VehicleBadge(type: type, size: 88),
                                 const SizedBox(height: 8),
                                 Text(type.label, textAlign: TextAlign.center),
                               ],
@@ -205,16 +201,27 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          _icon(driver.vehicleType),
-                          size: 36,
-                          color: AppColors.green,
-                        ),
+                        VehicleBadge(type: driver.vehicleType, size: 96),
                         Text(
                           driver.name,
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         Text(driver.vehicleType.label),
+                        Text(
+                          '${AppStrings.capacity}: ${driver.capacity}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            for (final tag in driver.specializations)
+                              Chip(
+                                label: Text(tag),
+                                backgroundColor: const Color(0xFFFFF1BF),
+                              ),
+                          ],
+                        ),
                         Text(driver.village.label),
                         const SizedBox(height: 8),
                         Container(
@@ -234,6 +241,8 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(AppStrings.visitingCard),
+                        const SizedBox(height: 12),
+                        CallButton(phone: driver.phone, isDemo: driver.isDemo),
                       ],
                     ),
                   ),

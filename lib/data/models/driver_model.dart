@@ -12,6 +12,8 @@ class DriverModel {
     required this.capacity,
     required this.isAvailable,
     this.isDemo = false,
+    this.vehicleNumber = '',
+    this.specializations = const [],
   });
   final String id;
   final String name;
@@ -22,4 +24,6 @@ class DriverModel {
   final String capacity;
   final bool isAvailable;
   final bool isDemo;
+  final String vehicleNumber;
+  final List<String> specializations;
 }

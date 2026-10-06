@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/constants/app_colors.dart';
 
 class CallButton extends StatefulWidget {
-  const CallButton({super.key, required this.phone, this.isDemo = false});
+  const CallButton({
+    super.key,
+    required this.phone,
+    this.isDemo = false,
+    this.label = AppStrings.call,
+  });
   final String phone;
   final bool isDemo;
+  final String label;
   @override
   State<CallButton> createState() => _CallButtonState();
 }
@@ -34,9 +41,22 @@ class _CallButtonState extends State<CallButton> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       FilledButton.icon(
-        onPressed: widget.isDemo || _launching ? null : _call,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.green,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.fromHeight(64),
+        ),
+        onPressed: _launching
+            ? null
+            : widget.isDemo
+            ? () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text(AppStrings.demoCall)),
+                );
+              }
+            : _call,
         icon: const Icon(Icons.call, size: 28),
-        label: const Text(AppStrings.call),
+        label: Text(widget.label),
       ),
       if (widget.isDemo) const Text(AppStrings.demoCall),
     ],

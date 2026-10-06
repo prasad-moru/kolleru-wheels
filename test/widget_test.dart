@@ -39,6 +39,8 @@ void main() {
     await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 2'), 250);
     expect(find.text('డ్రైవర్లు / Drivers: 2'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('రమేష్ / Ramesh'), 150);
+    await tester.ensureVisible(find.text('రమేష్ / Ramesh'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('రమేష్ / Ramesh'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.call), findsOneWidget);

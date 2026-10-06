@@ -19,7 +19,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'pulaparru',
           'పులపర్రు సెంటర్ / Pulaparru centre',
           VehicleType.boleroPickup,
-          '1.5 t',
+          '1.5 టన్నులు / 1.5 Tons',
           true,
         ),
         _driver(
@@ -28,7 +28,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'pulaparru',
           'చేపల చెరువులు / Fish ponds',
           VehicleType.tataAce,
-          '750 kg',
+          '750 కిలోలు / 750 kg',
           false,
         ),
         _driver(
@@ -37,7 +37,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'kaikaluru-town',
           'మార్కెట్ యార్డ్ / Market yard',
           VehicleType.eicher14ft,
-          '4 t',
+          '4 టన్నులు / 4 Tons • 14 ft',
           true,
         ),
         _driver(
@@ -46,7 +46,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'kaikaluru-town',
           'బస్ స్టాండ్ / Bus stand',
           VehicleType.dost,
-          '1.25 t',
+          '1.25 టన్నులు / 1.25 Tons',
           true,
         ),
         _driver(
@@ -55,7 +55,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'kovvadalanka',
           'వంతెన దగ్గర / Near the bridge',
           VehicleType.boleroPickup,
-          '1.5 t',
+          '1.5 టన్నులు / 1.5 Tons',
           false,
         ),
         _driver(
@@ -64,7 +64,7 @@ class MockDirectoryRepository implements DirectoryRepository {
           'kovvadalanka',
           'గ్రామ సెంటర్ / Village centre',
           VehicleType.tractor,
-          'Trailer • 3 t',
+          'ట్రైలర్ / Trailer • 3 టన్నులు / 3 Tons',
           true,
         ),
       ]);
@@ -87,6 +87,17 @@ class MockDirectoryRepository implements DirectoryRepository {
     capacity: capacity,
     isAvailable: available,
     isDemo: true,
+    vehicleNumber: 'AP • DEMO 00$id',
+    specializations: switch (type) {
+      VehicleType.boleroPickup => const ['ఐరన్ / పైపులు • Iron / Pipes'],
+      VehicleType.tataAce => const ['లైవ్ ఫిష్ / చేపల ట్యాంక్ • Live fish'],
+      VehicleType.dost => const ['మేత / ధాన్యం • Feed / Grain'],
+      VehicleType.eicher14ft => const [
+        'చేపల బాక్సులు • Fish boxes',
+        'భారీ లోడ్లు • Heavy loads',
+      ],
+      VehicleType.tractor => const ['పంట / వ్యవసాయం • Farm loads'],
+    },
   );
   @override
   List<DriverModel> getDrivers({
