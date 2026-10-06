@@ -7,6 +7,10 @@ import '../../core/constants/villages.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/models/local_driver_profile.dart';
+import '../../data/models/driver_model.dart';
+import '../../data/repositories/supabase_driver_repository.dart';
+import '../../data/repositories/supabase_load_request_repository.dart';
+import '../../data/repositories/offline_table_store.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
@@ -24,11 +28,13 @@ class HomeDirectoryScreen extends StatefulWidget {
     this.localDriverRepository,
     this.onDriverMode,
     this.loadRequestRepository,
+    this.remoteDriverRepository,
   });
   final DirectoryRepository? repository;
   final LocalDriverRepository? localDriverRepository;
   final VoidCallback? onDriverMode;
   final LoadRequestRepository? loadRequestRepository;
+  final SupabaseDriverRepository? remoteDriverRepository;
   @override
   State<HomeDirectoryScreen> createState() => _HomeDirectoryScreenState();
 }
@@ -37,6 +43,10 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   late final DirectoryRepository _repository;
   late final LocalDriverRepository _localRepository;
   LocalDriverProfile? _localProfile;
+  List<DriverModel>? _liveDrivers;
+  late final SupabaseDriverRepository _remoteDrivers;
+  bool _remoteLoading = false;
+  bool _cachedDrivers = false;
   bool _profileLoadFailed = false;
   String? _villageId;
   VehicleType? _vehicle;
@@ -48,8 +58,31 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     super.initState();
     _repository = widget.repository ?? MockDirectoryRepository();
     _localRepository = widget.localDriverRepository ?? LocalDriverRepository();
+    _remoteDrivers =
+        widget.remoteDriverRepository ?? SupabaseDriverRepository.instance;
+    if (widget.repository == null || widget.remoteDriverRepository != null) {
+      _fetchDrivers();
+    }
     _loadLocalProfile();
     _restoreVillage();
+  }
+
+  Future<void> _fetchDrivers() async {
+    if (_remoteLoading) return;
+    setState(() => _remoteLoading = true);
+    try {
+      final drivers = await _remoteDrivers.getAvailableDrivers();
+      if (mounted) {
+        setState(() {
+          _liveDrivers = drivers;
+          _cachedDrivers = _remoteDrivers.usingCache;
+        });
+      }
+    } catch (_) {
+      /* Static/local directory still works if the cache is damaged. */
+    } finally {
+      if (mounted) setState(() => _remoteLoading = false);
+    }
   }
 
   Future<void> _loadLocalProfile() async {
@@ -79,7 +112,10 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         ),
       ),
     );
-    if (mounted) await _loadLocalProfile();
+    if (mounted) {
+      await _loadLocalProfile();
+      await _fetchDrivers();
+    }
   }
 
   Future<void> _postLoad() async {
@@ -93,8 +129,18 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       ),
     );
     if (mounted && posted == true) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(AppStrings.postedNeed)));
+      final pool =
+          widget.loadRequestRepository ?? LoadRequestRepository.instance;
+      final pending = pool is SupabaseLoadRequestRepository && pool.syncPending;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            pending
+                ? 'ఫోన్‌లో సేవ్ అయింది / Saved locally. Waiting for cloud sync.'
+                : AppStrings.postedNeed,
+          ),
+        ),
+      );
     }
   }
 
@@ -131,16 +177,27 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   @override
   Widget build(BuildContext context) {
     final drivers = [
-      ..._repository.getDrivers(
-        vehicleType: _vehicle,
-        availableOnly: _availableOnly,
-      ),
+      ...(_liveDrivers?.isNotEmpty == true
+          ? _liveDrivers!.where(
+              (d) =>
+                  (_vehicle == null || d.vehicleType == _vehicle) &&
+                  (!_availableOnly || d.isAvailable),
+            )
+          : _repository.getDrivers(
+              vehicleType: _vehicle,
+              availableOnly: _availableOnly,
+            )),
     ];
     final local = _localProfile;
     if (local != null &&
         (_vehicle == null || local.vehicleType == _vehicle) &&
         (!_availableOnly || local.isAvailable)) {
       drivers.insert(0, local.toDriverModel());
+      drivers.removeWhere(
+        (d) =>
+            d.id != local.id &&
+            d.id == OfflineTableStore.cloudId('drivers', local.id),
+      );
     }
     final headings = <String, String>{};
     if (_villageId != null) {
@@ -169,6 +226,11 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       appBar: AppBar(
         title: const Text('Kolleru Wheels'),
         actions: [
+          IconButton(
+            tooltip: 'రిఫ్రెష్ / Refresh',
+            onPressed: _remoteLoading ? null : _fetchDrivers,
+            icon: const Icon(Icons.refresh),
+          ),
           IconButton(
             key: const ValueKey('driver-mode'),
             tooltip: AppStrings.driverMode,
@@ -219,7 +281,14 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(AppStrings.demo),
+            if (_remoteLoading) const LinearProgressIndicator(),
+            Text(
+              _liveDrivers?.isNotEmpty == true
+                  ? (_cachedDrivers
+                        ? 'సేవ్ చేసిన వాహనాలు / Cached drivers'
+                        : 'లైవ్ వాహనాలు / Live drivers')
+                  : AppStrings.demo,
+            ),
             if (_profileLoadFailed)
               TextButton(
                 onPressed: _loadLocalProfile,

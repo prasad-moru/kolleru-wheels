@@ -2,7 +2,7 @@
 
 Technical architecture, product rationale, implementation boundaries, and delivery roadmap.
 
-**Architecture snapshot:** 6 October 2026. **Primary platform:** Flutter Android. **Current milestone:** locally persisted prototype with implemented Phases 1–4; backend distribution and field deployment remain planned.
+**Architecture snapshot:** 6 October 2026. **Primary platform:** Flutter Android. **Current milestone:** Phases 1–4 plus the Supabase client integration with persistent offline caches and pending writes. Live database authorization, FCM, and field deployment remain to be verified or implemented. Section 11 describes the cloud integration and supersedes the earlier local-only workflow descriptions below.
 
 ## 1. Executive summary
 
@@ -121,6 +121,7 @@ kolleru-wheels/
 │   │   │   ├── app_colors.dart
 │   │   │   ├── app_strings.dart
 │   │   │   ├── driver_spots.dart
+│   │   │   ├── supabase_config.dart
 │   │   │   └── villages.dart
 │   │   ├── theme/
 │   │   │   └── app_theme.dart
@@ -136,7 +137,10 @@ kolleru-wheels/
 │   │   └── repositories/
 │   │       ├── load_request_repository.dart
 │   │       ├── local_driver_repository.dart
-│   │       └── mock_directory_repository.dart
+│   │       ├── mock_directory_repository.dart
+│   │       ├── offline_table_store.dart
+│   │       ├── supabase_driver_repository.dart
+│   │       └── supabase_load_request_repository.dart
 │   └── presentation/
 │       ├── common/
 │       │   ├── audio_cue_button.dart
@@ -157,6 +161,7 @@ kolleru-wheels/
 │   ├── load_request_test.dart
 │   ├── proximity_and_load_request_test.dart
 │   ├── proximity_matcher_test.dart
+│   ├── supabase_repository_test.dart
 │   ├── visiting_card_test.dart
 │   └── widget_test.dart
 ├── android/                      # Primary deployment platform
@@ -446,3 +451,50 @@ On the current Windows development machine, Flutter plugin-link creation encount
 For the planned Android release, configure signing securely and review the merged manifest and dependency requirements before generating an APK. `flutter build apk --release` is the intended build command after release configuration is ready; release APK generation and on-ground installation are not completed milestones in this snapshot. Retained desktop/iOS/web scaffolds do not imply those platforms have been validated; the PNG exporter uses `dart:io` and currently targets native mobile execution.
 
 Pilot acceptance should include outdoor use on inexpensive phones, 2× text settings, Telugu rendering, keyboard-visible posting, no-network local browsing, app restart and resume, exact expired-load hiding, dialer handoff, real WhatsApp Status sharing, clear demo/local-only labeling, and participants’ understanding that arrangements are confirmed directly by phone.
+
+## 11. Supabase client integration and offline synchronization
+
+Phase 5 is now **in progress**: Supabase client integration is implemented; authenticated ownership, database policy verification, authoritative server expiry, FCM broadcasts, and field validation remain outstanding. The earlier local workflow descriptions apply when cloud configuration is absent. No production credentials or database policy changes are included in this repository change.
+
+### Configuration and startup
+
+`core/constants/supabase_config.dart` reads `SUPABASE_URL` and `SUPABASE_ANON_KEY` through `String.fromEnvironment`. Both default to empty values, keeping unconfigured builds usable offline. Supply the project's public anon/publishable client key:
+
+```powershell
+flutter run --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR_PUBLIC_CLIENT_KEY
+```
+
+`main.dart` initializes Flutter bindings, conditionally awaits `Supabase.initialize`, and installs `SupabaseLoadRequestRepository` as the shared load repository. Initialization failure preserves local browsing. The resolved SDK accepts the public key through `publishableKey`; the environment name remains `SUPABASE_ANON_KEY` for compatibility. Never embed a service-role key. Android's main manifest includes `INTERNET` for release networking.
+
+Dependencies added: `supabase_flutter: ^2.8.0`, `uuid: ^4.5.1`; HTTP request mocks use the development dependency `http: ^1.6.0`. Exact installed versions are recorded in `pubspec.lock`.
+
+### Repository responsibilities and cloud contracts
+
+| Module | Responsibility |
+| --- | --- |
+| `offline_table_store.dart` | SharedPreferences JSON snapshots and persistent pending-write lists; serialized repository operations; deterministic UUID migration for legacy IDs. |
+| `supabase_driver_repository.dart` | Maps driver rows, fetches available drivers, upserts profiles, updates availability/current spot, and retries pending writes. |
+| `supabase_load_request_repository.dart` | Extends the existing observable load repository; cloud creation/closure, local migration, active queries, cache fallback, exact TTL, and mandal filtering. |
+| `supabase_repository_test.dart` | Schema mapping, query predicates, cache restart, offline mutation/retry, unconfirmed writes, closure, migration, and expiry regression coverage using mocked HTTP. |
+
+The `drivers` row contract is `id`, `phone`, `name`, `base_village_id`, `current_spot_village_id`, `vehicle_type`, `capacity_tons`, `vehicle_number`, `specializations`, `is_available`, `updated_at`. Capacity is numeric tons; vehicle types use Dart enum names such as `boleroPickup`. Village values use the static directory IDs. Unknown villages or invalid row values do not replace a usable cached snapshot.
+
+The `load_requests` row contract is `id`, `poster_name`, `poster_phone`, `from_location`, `to_village_id`, `material_type`, `vehicle_type_needed`, `is_closed`, `created_at`. Vehicle type may be null for unrestricted requests. New local IDs are UUIDv4; existing non-UUID IDs map deterministically to UUIDv5, avoiding duplicate identities on retries. Inserts use idempotent upsert by `id`.
+
+### Offline persistence and synchronization rules
+
+For each table, `supabase_<table>_cache_v1` stores the last usable rows and `supabase_<table>_pending_v1` stores pending mutations. `supabase_load_requests_known_v1` records migrated local request identities so closed remote loads are not resurrected from an older local copy. Existing local profile/load keys remain intact.
+
+Writes persist the pending mutation and cache before attempting the network. Cloud mutations request a returned ID and are considered synchronized only after confirmation. Network errors, policy denial, or unconfirmed responses retain pending writes. Subsequent repository reads/writes retry the outbox; the driver dashboard also exposes an explicit retry action. This is foreground synchronization, with no background worker or connectivity listener. Pending writes for the same ID replace older pending state; there is no cross-device conflict resolution or transactional database.
+
+Successful reads replace the snapshot and overlay any still-pending local mutations. Unavailable drivers and closed loads are filtered after merging. Demo drivers are never uploaded. SharedPreferences is a small unencrypted cache, not secure identity storage; the original boundary against government ID/RC collection remains unchanged.
+
+### Screen behavior and expiry
+
+The farmer directory fetches available cloud drivers on entry and manual refresh. It uses cached drivers when the request fails, and mock drivers when no usable cloud/cache records exist, while preserving the registered local profile. Labels distinguish live, cached, and demo data. Proximity matching continues to use the existing three tiers.
+
+The dashboard saves profile changes locally before cloud synchronization and shows pending state when confirmation fails. Its load board fetches on entry, refresh, resume, minute updates, and expiry timers. Results are restricted to destination villages in the driver's current operational mandal, falling back to the base village's mandal. This is fetch-based updating, not a Supabase Realtime subscription.
+
+Cloud load queries filter `is_closed = false`, `created_at >= device UTC now - 30 minutes`, and `created_at <= device UTC now`, ordered newest first. Local validation then excludes future-dated records and ages of exactly 30 minutes or more, including cached rows. Expired pending posts are discarded instead of being uploaded late. Expiry hides rows; it does not physically delete server rows. A database view/RPC or server policy is still needed for authoritative server-clock TTL enforcement.
+
+Offline posting reports that the request was saved locally and is awaiting sync; it does not claim cross-device delivery. Public-key access depends on deployed table permissions and RLS policies. This client does not add authentication or prove driver ownership, so local Driver Mode must not be treated as authorization. Schema, enum storage, uniqueness, returned-row permissions, and ownership policies must be validated against the deployed database before the pilot. No live database connection was available during automated verification.

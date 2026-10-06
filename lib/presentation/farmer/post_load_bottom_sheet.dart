@@ -6,6 +6,7 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/load_request_repository.dart';
+import '../../data/repositories/supabase_load_request_repository.dart';
 
 class PostLoadBottomSheet extends StatefulWidget {
   const PostLoadBottomSheet({
@@ -96,7 +97,11 @@ class _PostLoadBottomSheetState extends State<PostLoadBottomSheet> {
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 8),
-                  const Text(AppStrings.localLoadNote),
+                  Text(
+                    widget.repository is SupabaseLoadRequestRepository
+                        ? '30 నిమిషాల లోడ్ • ఆఫ్‌లైన్ అయితే ఫోన్‌లో సేవ్ / 30-minute load • saved locally when offline'
+                        : AppStrings.localLoadNote,
+                  ),
                   const SizedBox(height: 20),
                   TextFormField(
                     key: const ValueKey('load-pickup'),

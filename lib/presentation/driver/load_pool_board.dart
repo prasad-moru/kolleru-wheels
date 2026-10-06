@@ -7,6 +7,7 @@ import '../../core/constants/app_strings.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
 import '../../data/repositories/load_request_repository.dart';
+import '../../data/repositories/supabase_load_request_repository.dart';
 import '../common/call_button.dart';
 
 class LoadPoolBoard extends StatefulWidget {
@@ -131,7 +132,16 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 8),
-        const Text(AppStrings.localLoadNote),
+        Text(
+          widget.repository is SupabaseLoadRequestRepository
+              ? 'క్లౌడ్ లోడ్లు • ఆఫ్‌లైన్ క్యాష్ • 30 నిమిషాల వరకు / Cloud loads • offline cache • 30-minute expiry'
+              : AppStrings.localLoadNote,
+        ),
+        if (widget.repository is SupabaseLoadRequestRepository &&
+            (widget.repository as SupabaseLoadRequestRepository).syncPending)
+          const Text(
+            'ఫోన్‌లో సేవ్ అయింది • సింక్ పెండింగ్ / Saved locally • sync pending',
+          ),
         if (widget.operationalMandalId != null)
           const Text(AppStrings.mandalLoadNote),
         if (_loading)

@@ -15,6 +15,7 @@ class DriverModel {
     this.vehicleNumber = '',
     this.specializations = const [],
     this.currentSpotVillageId,
+    this.capacityTons,
   });
   final String id;
   final String name;
@@ -28,4 +29,5 @@ class DriverModel {
   final String vehicleNumber;
   final List<String> specializations;
   final String? currentSpotVillageId;
+  final double? capacityTons;
 }

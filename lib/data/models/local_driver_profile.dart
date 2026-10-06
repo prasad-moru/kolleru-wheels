@@ -62,6 +62,7 @@ class LocalDriverProfile {
     currentSpotVillageId: currentSpotVillage.id,
     vehicleType: vehicleType,
     capacity: '$capacityTons టన్నులు / $capacityTons Tons',
+    capacityTons: capacityTons,
     isAvailable: isAvailable,
     vehicleNumber: vehicleNumber,
     specializations: specializations,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
@@ -60,7 +61,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     setState(() => _saving = true);
     final village = KolleruVillages.find(_villageId)!;
     final profile = LocalDriverProfile(
-      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      id: const Uuid().v4(),
       name: _name.text.trim(),
       phone: '+91${_mobileDigits(_phone.text)}',
       baseVillage: village,

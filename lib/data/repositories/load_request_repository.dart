@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/load_request_model.dart';
 import '../models/vehicle_type.dart';
@@ -13,7 +14,7 @@ import '../../core/utils/proximity_matcher.dart';
 class LoadRequestRepository extends ChangeNotifier {
   LoadRequestRepository({DateTime Function()? now})
     : _now = now ?? DateTime.now;
-  static final instance = LoadRequestRepository();
+  static LoadRequestRepository instance = LoadRequestRepository();
   static const storageKey = 'urgent_load_requests_v1';
   final DateTime Function() _now;
   List<LoadRequestModel>? _requests;
@@ -86,7 +87,7 @@ class LoadRequestRepository extends ChangeNotifier {
     final now = _now();
     // ID does not depend on the injected clock's resolution.
     final request = LoadRequestModel(
-      id: 'load-${DateTime.now().microsecondsSinceEpoch}-${_requests!.length}',
+      id: const Uuid().v4(),
       posterName: posterName.trim(),
       posterPhone: posterPhone,
       fromLocation: fromLocation.trim(),

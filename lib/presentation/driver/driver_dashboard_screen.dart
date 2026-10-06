@@ -8,6 +8,7 @@ import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
+import '../../data/repositories/supabase_driver_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../farmer/home_directory_screen.dart';
 import 'visiting_card_screen.dart';
@@ -30,10 +31,23 @@ class DriverDashboardScreen extends StatefulWidget {
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   late LocalDriverProfile _profile;
   bool _saving = false;
+  bool _syncPending = false;
+  final _remoteDriver = SupabaseDriverRepository.instance;
   @override
   void initState() {
     super.initState();
     _profile = widget.profile;
+    _syncDriver();
+  }
+
+  Future<void> _syncDriver() async {
+    if (!_remoteDriver.isConfigured) return;
+    try {
+      await _remoteDriver.upsertDriver(_profile.toDriverModel());
+      if (mounted) setState(() => _syncPending = _remoteDriver.syncPending);
+    } catch (_) {
+      if (mounted) setState(() => _syncPending = true);
+    }
   }
 
   Future<void> _save(Future<LocalDriverProfile> Function() update) async {
@@ -42,6 +56,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     try {
       final updated = await update();
       if (mounted) setState(() => _profile = updated);
+      await _syncDriver();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -226,6 +241,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           ),
           const SizedBox(height: 16),
           const Text(AppStrings.localProfileNote),
+          if (_syncPending)
+            TextButton(
+              onPressed: _saving ? null : _syncDriver,
+              child: const Text(
+                'ఫోన్‌లో సేవ్ అయింది • క్లౌడ్ సింక్ పెండింగ్ / Saved locally • cloud sync pending',
+              ),
+            ),
           const SizedBox(height: 24),
           LoadPoolBoard(
             operationalMandalId:
