@@ -200,15 +200,19 @@ class AuthRepository extends ChangeNotifier {
       if (!isMock) {
         final row = await _client!
             .from('user_profiles')
-            .insert({
-              ...profile.toJson(),
-              'user_id': _client.auth.currentUser!.id,
-            })
+            .upsert(
+              {...profile.toJson(), 'user_id': _client.auth.currentUser!.id},
+              onConflict: 'phone',
+              ignoreDuplicates: true,
+            )
             .select('phone,role,name,village_id')
             .maybeSingle()
             .timeout(const Duration(seconds: 8));
-        if (row == null) throw StateError('Profile save was not confirmed');
-        profile = UserProfile.fromJson(row);
+        // A concurrent registration must not overwrite an authoritative role.
+        profile = row == null
+            ? await _remoteProfile(normalized)
+            : UserProfile.fromJson(row);
+        if (profile == null) throw StateError('Profile save was not confirmed');
       }
     }
     await _cache(profile);

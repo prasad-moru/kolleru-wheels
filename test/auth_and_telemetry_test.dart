@@ -16,7 +16,6 @@ import 'package:kolleru_wheels/presentation/auth/phone_otp_screen.dart';
 import 'package:kolleru_wheels/presentation/auth/complete_profile_screen.dart';
 import 'package:kolleru_wheels/presentation/auth/role_destination.dart';
 import 'package:kolleru_wheels/presentation/common/call_button.dart';
-import 'package:kolleru_wheels/presentation/driver/driver_registration_screen.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_dashboard_screen.dart';
 import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
@@ -210,6 +209,11 @@ void main() {
       if (request.url.path.endsWith('/verify')) return response(otpSession());
       expect(request.url.path, '/rest/v1/user_profiles');
       if (request.method == 'POST') {
+        expect(request.url.queryParameters['on_conflict'], 'phone');
+        expect(
+          request.headers['prefer'],
+          contains('resolution=ignore-duplicates'),
+        );
         final row = jsonDecode(request.body) as Map;
         expect(row['user_id'], 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
         profile = {
@@ -522,8 +526,48 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('Missing login switches to registration with verified phone', (
+    tester,
+  ) async {
+    final auth = AuthRepository(mockMode: true);
+    UserProfile? verified;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PhoneOtpScreen(repository: auth, onVerified: (p) => verified = p),
+      ),
+    );
+    expect(find.byKey(const ValueKey('auth-name')), findsNothing);
+    expect(find.byKey(const ValueKey('auth-driver')), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('auth-phone')),
+      '9876543210',
+    );
+    await tester.tap(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
+    await tester.tap(find.byKey(const ValueKey('verify-otp')));
+    await tester.pumpAndSettle();
+    expect(verified, isNull);
+    expect(find.textContaining('Account not found'), findsWidgets);
+    expect(find.byKey(const ValueKey('auth-name')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('auth-phone')))
+          .controller!
+          .text,
+      '9876543210',
+    );
+    await tester.enterText(find.byKey(const ValueKey('auth-name')), 'Ramesh');
+    await chooseCluster(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+    await tester.tap(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
+    expect(verified?.role, 'shipper');
+    expect(verified?.villageId, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
-    'OTP screen verifies driver and role routing opens registration',
+    'Register driver collects details before OTP and persists after verification',
     (tester) async {
       final auth = AuthRepository(mockMode: true);
       UserProfile? verified;
@@ -531,47 +575,77 @@ void main() {
         MaterialApp(
           home: PhoneOtpScreen(
             repository: auth,
-            onVerified: (profile) => verified = profile,
+            onVerified: (p) => verified = p,
           ),
         ),
       );
+      await tester.tap(find.byKey(const ValueKey('register-tab')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('auth-name')), 'Ramesh');
       await tester.enterText(
         find.byKey(const ValueKey('auth-phone')),
         '9876543210',
       );
+      await tester.ensureVisible(find.byKey(const ValueKey('auth-driver')));
       await tester.tap(find.byKey(const ValueKey('auth-driver')));
+      await tester.pumpAndSettle();
+      await chooseCluster(tester);
+      await tester.ensureVisible(find.byKey(const ValueKey('auth-number')));
+      await tester.enterText(
+        find.byKey(const ValueKey('auth-number')),
+        'AP 16 AB 1234',
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('auth-capacity')));
+      await tester.enterText(
+        find.byKey(const ValueKey('auth-capacity')),
+        '1.5',
+      );
+      expect(await LocalDriverRepository().getProfile(), isNull);
+      await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
       await tester.tap(find.byKey(const ValueKey('send-otp')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Resend in 60s'), findsOneWidget);
+      expect(auth.currentProfile, isNull);
+      await tester.ensureVisible(find.byKey(const ValueKey('auth-otp')));
       await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
+      await tester.ensureVisible(find.byKey(const ValueKey('verify-otp')));
       await tester.tap(find.byKey(const ValueKey('verify-otp')));
       await tester.pumpAndSettle();
-      expect(verified, isNull);
-      expect(find.byType(CompleteProfileScreen), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const ValueKey('complete-name')),
-        'Ramesh',
-      );
-      await tester.tap(find.byKey(const ValueKey('complete-driver')));
-      await chooseCluster(tester);
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('complete-profile')),
-      );
-      await tester.tap(find.byKey(const ValueKey('complete-profile')));
-      await tester.pumpAndSettle();
-      expect(find.byType(DriverRegistrationScreen), findsOneWidget);
-      expect(
-        (tester.widget<TextField>(
-          find.descendant(
-            of: find.byKey(const ValueKey('driver-phone')),
-            matching: find.byType(TextField),
-          ),
-        )).readOnly,
-        true,
-      );
+      expect(verified?.role, 'driver');
+      final driver = await LocalDriverRepository().getProfile();
+      expect(driver?.capacityTons, 1.5);
+      expect(driver?.phone, '+919876543210');
+      expect(driver?.vehicleNumber, 'AP 16 AB 1234');
       await tester.pumpWidget(const SizedBox());
     },
   );
+  testWidgets('Existing Login routes through the gated session router', (
+    tester,
+  ) async {
+    final signup = AuthRepository(mockMode: true);
+    await signup.signInWithOtp(phone: '9876543210', role: 'shipper');
+    await signup.verifyOTP(phone: '9876543210', token: '123456');
+    await signup.createUserProfile(
+      phone: '9876543210',
+      name: 'Farmer',
+      role: 'shipper',
+    );
+    await signup.signOut();
+    final auth = AuthRepository(mockMode: true);
+    await tester.pumpWidget(KolleruWheelsApp(authRepository: auth));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('auth-phone')),
+      '9876543210',
+    );
+    await tester.tap(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
+    await tester.tap(find.byKey(const ValueKey('verify-otp')));
+    await tester.pumpAndSettle();
+    expect(find.byType(HomeDirectoryScreen), findsOneWidget);
+    expect(find.byType(PhoneOtpScreen), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
     'Shipper returns to directory; cached admin cannot read monitor data',
     (tester) async {

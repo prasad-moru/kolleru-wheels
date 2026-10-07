@@ -35,6 +35,8 @@ class KolleruWheelsApp extends StatelessWidget {
     title: 'Kolleru Wheels',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
+    // Guests enter the Login/Register gateway; completed sessions stay isolated
+    // by their authoritative profile role.
     home: SessionRouter(repository: authRepository),
   );
 }

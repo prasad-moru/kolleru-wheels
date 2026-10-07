@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/auth_repository.dart';
-import 'complete_profile_screen.dart';
 import 'phone_otp_screen.dart';
 import 'role_destination.dart';
 
@@ -48,10 +47,6 @@ class _SessionRouterState extends State<SessionRouter> {
     final profile = _auth.currentProfile;
     if (profile != null) {
       return RoleDestination(profile: profile, authRepository: _auth);
-    }
-    final phone = _auth.onboardingPhone;
-    if (phone != null) {
-      return CompleteProfileScreen(phone: phone, repository: _auth);
     }
     return PhoneOtpScreen(repository: _auth, onVerified: (_) => _changed());
   }
