@@ -13,9 +13,13 @@ class PostLoadBottomSheet extends StatefulWidget {
     super.key,
     required this.repository,
     this.initialVillageId,
+    this.posterPhone,
+    this.posterName,
   });
   final LoadRequestRepository repository;
   final String? initialVillageId;
+  final String? posterPhone;
+  final String? posterName;
   @override
   State<PostLoadBottomSheet> createState() => _PostLoadBottomSheetState();
 }
@@ -33,6 +37,8 @@ class _PostLoadBottomSheetState extends State<PostLoadBottomSheet> {
   void initState() {
     super.initState();
     _drop = widget.initialVillageId;
+    _phone.text = widget.posterPhone?.replaceFirst('+91', '') ?? '';
+    _name.text = widget.posterName ?? '';
   }
 
   @override
@@ -194,6 +200,7 @@ class _PostLoadBottomSheetState extends State<PostLoadBottomSheet> {
                   TextFormField(
                     key: const ValueKey('load-phone'),
                     controller: _phone,
+                    readOnly: widget.posterPhone != null,
                     keyboardType: TextInputType.phone,
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),

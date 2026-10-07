@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,19 +10,51 @@ import '../../core/constants/supabase_config.dart';
 import '../models/user_profile_model.dart';
 
 /// Cached identity restores offline UX, never server authorization.
-class AuthRepository {
+class AuthRepository extends ChangeNotifier {
   AuthRepository({
     SupabaseClient? client,
     bool? mockMode,
     DateTime Function()? now,
   }) : _client = client ?? SupabaseConfig.client,
        isMock = mockMode ?? (client == null && !SupabaseConfig.isConfigured),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now {
+    _authChanges = _client?.auth.onAuthStateChange.listen((event) {
+      if (event.event == AuthChangeEvent.signedOut) {
+        _verifiedPhone = null;
+        onboardingPhone = null;
+        currentProfile = null;
+        unawaited(_clearIdentity());
+      }
+    });
+  }
+  StreamSubscription<AuthState>? _authChanges;
+  Future<void> _clearIdentity() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionKey);
+      await prefs.remove(_onboardingKey);
+    } catch (_) {
+      /* Memory identity is already cleared. */
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_authChanges?.cancel());
+    super.dispose();
+  }
+
   static final instance = AuthRepository();
   final SupabaseClient? _client;
   final bool isMock;
   final DateTime Function() _now;
-  UserProfile? currentProfile;
+  UserProfile? _currentProfile;
+  UserProfile? get currentProfile => _currentProfile;
+  set currentProfile(UserProfile? value) {
+    _currentProfile = value;
+    notifyListeners();
+  }
+
   String? _pendingPhone;
   String? _verifiedPhone;
   String? onboardingPhone;
@@ -109,7 +144,7 @@ class AuthRepository {
   Future<UserProfile?> _remoteProfile(String phone) async {
     final row = await _client!
         .from('user_profiles')
-        .select('phone,role,name')
+        .select('phone,role,name,village_id')
         .eq('phone', phone)
         .maybeSingle()
         .timeout(const Duration(seconds: 8));
@@ -140,6 +175,7 @@ class AuthRepository {
     required String phone,
     required String name,
     required String role,
+    String? villageId,
   }) async {
     final normalized = normalizePhone(phone);
     if (verifiedPhone != normalized) {
@@ -155,7 +191,12 @@ class AuthRepository {
         ? await _cachedProfile(normalized)
         : await _remoteProfile(normalized);
     if (profile == null) {
-      profile = UserProfile(phone: normalized, name: name.trim(), role: role);
+      profile = UserProfile(
+        phone: normalized,
+        name: name.trim(),
+        role: role,
+        villageId: villageId,
+      );
       if (!isMock) {
         final row = await _client!
             .from('user_profiles')
@@ -163,7 +204,7 @@ class AuthRepository {
               ...profile.toJson(),
               'user_id': _client.auth.currentUser!.id,
             })
-            .select('phone,role,name')
+            .select('phone,role,name,village_id')
             .maybeSingle()
             .timeout(const Duration(seconds: 8));
         if (row == null) throw StateError('Profile save was not confirmed');

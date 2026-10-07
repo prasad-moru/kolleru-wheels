@@ -20,6 +20,7 @@ class RoleDestination extends StatelessWidget {
     'driver' => DriverModeScreen(
       repository: LocalDriverRepository(),
       verifiedPhone: profile.phone,
+      authRepository: authRepository,
     ),
     'admin' => AdminDashboardScreen(authRepository: authRepository),
     _ => HomeDirectoryScreen(authRepository: authRepository),

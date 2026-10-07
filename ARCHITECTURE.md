@@ -2,6 +2,8 @@
 
 Technical architecture, product rationale, implementation boundaries, and delivery roadmap.
 
+**Current commercial behavior (7 October 2026):** Section 13 supersedes all historical zero-login, dual-role navigation, and ID-conflict driver-sync descriptions below. Login and completed registration are now mandatory; farmer and driver views are isolated.
+
 **Architecture snapshot:** 6 October 2026. **Primary platform:** Flutter Android. **Current milestone:** Phases 1–4 plus the Supabase client integration with persistent offline caches and pending writes. Live database authorization, FCM, and field deployment remain to be verified or implemented. Section 11 describes the cloud integration and supersedes the earlier local-only workflow descriptions below.
 
 ## 1. Executive summary
@@ -150,10 +152,12 @@ kolleru-wheels/
 │       ├── auth/
 │       │   ├── complete_profile_screen.dart
 │       │   ├── phone_otp_screen.dart
+│       │   ├── session_router.dart
 │       │   └── role_destination.dart
 │       ├── common/
 │       │   ├── audio_cue_button.dart
 │       │   ├── call_button.dart
+│       │   ├── mandal_village_picker.dart
 │       │   ├── vehicle_badge.dart
 │       │   └── village_picker.dart
 │       ├── driver/
@@ -168,12 +172,14 @@ kolleru-wheels/
 ├── supabase/
 │   └── migrations/
 │       ├── 202610060001_auth_and_telemetry.sql
-│       └── 202610070001_profile_completion.sql
+│       ├── 202610070001_profile_completion.sql
+│       └── 202610070002_commercial_gating.sql
 ├── test/
 │   ├── auth_and_telemetry_test.dart
 │   ├── driver_onboarding_test.dart
 │   ├── drawer_navigation_test.dart
 │   ├── load_request_test.dart
+│   ├── onboarding_helpers.dart
 │   ├── proximity_and_load_request_test.dart
 │   ├── proximity_matcher_test.dart
 │   ├── supabase_repository_test.dart
@@ -580,3 +586,21 @@ The auth tests additionally cover empty remote results without singular-response
 `test/auth_and_telemetry_test.dart` covers mock OTP validation, resend/expiry, persistence, sign-out, SMS verification through mocked Supabase HTTP, authoritative roles, corrupt caches, configured-auth failure without bypass, telemetry schema/rejection, nonblocking dialer launch, role navigation, offline admin refusal, and exact admin queries with India-day boundaries. These checks do not validate live SMS delivery or execute the PostgreSQL migration.
 
 Phases 1–4 remain implemented; Phase 5 now includes SDK integration plus phone authentication and admin monitoring. FCM, live schema/RLS verification, driver/load ownership enforcement review, authoritative server expiry, telemetry retention, and on-ground testing remain outstanding.
+
+## 13. Commercial gating and role isolation (7 October 2026)
+
+This amendment replaces the prototype's zero-login and dual-role browsing decisions at the user's request. No transport directory or urgent-load board is rendered before login and completed registration. `SessionRouter` restores `AuthRepository` state, presents `PhoneOtpScreen` to guests, presents `CompleteProfileScreen` for verified phones without a profile, and dispatches completed shipper/driver/admin identities to their own destinations. Restoring a session displays only a loading indicator. Auth identity changes and Supabase sign-out events invalidate displayed views. Logout clears the navigation stack and returns to the gated entry.
+
+Farmers see only available vehicles and the Post Load action. Busy vehicles and all Driver Mode, driver settings, driver dashboard, and competitor-management actions are removed. Their drawer contains exactly Farmer Profile, My Posted Loads, and Logout. My Posted Loads filters the active repository snapshot to the authenticated poster phone; it is an active-post list, not historical analytics. Posting prefills and locks the verified shipper phone. Existing visual vehicle filters and proximity sections remain available.
+
+Drivers see their own profile, availability, current spot, digital card, and operational-mandal urgent loads. The Farmer View switch is removed. Their drawer contains exactly Driver Profile, Digital Visiting Card, and Logout. Direct construction of the farmer screen with a driver identity redirects through the session router instead of fetching a directory; the driver dashboard similarly requires a driver identity whose phone matches its profile. Existing drivers without locally saved vehicle details complete registration before reaching the dashboard. Administrators open the admin monitor through role routing and retain its live authorization check.
+
+`MandalVillagePicker` reuses the existing `Mandal.villages` cluster data rather than adding a duplicate geographic model. Both profile completion and driver registration require a mandal and village. Village choices contain only the selected mandal's villages; changing mandal clears the old village and validation requires a new selection. Name and geographic selection carry forward into vehicle registration. Driver-specific fields include visual vehicle type, registration number, and numeric tons. `UserProfile.villageId` persists the shipper/driver locality as `village_id`; older cached profiles can deserialize without that optional field.
+
+Driver cloud mutations now use `upsert(payload, onConflict: 'phone')`. The table must have a unique phone index, supplied in the commercial migration. Re-registering an existing phone updates the row instead of attempting a conflicting phone insert. The existing local cache/outbox and confirmed-write behavior remain in place; the payload carries the local UUID and can update the existing row's UUID on a phone conflict. Any external driver-ID references must be reviewed before migration. The cloud schema currently has no modeled driver-ID reference in loads or call telemetry.
+
+Apply `supabase/migrations/202610070002_commercial_gating.sql` after the earlier migrations. It adds the phone index and `user_profiles.village_id`, removes anonymous transport-table privileges and anonymous telemetry privileges, and defines authenticated permissions with restrictive role/ownership boundaries. Farmers may read available vehicles and their own loads; drivers may read their own vehicle and active loads; administrators may read monitoring data. Only drivers mutate their own vehicle, and only shippers mutate their own load posts. Restrictive policies prevent older permissive policies from expanding access. Duplicate existing phone rows must be reconciled before applying the unique index; the migration does not delete records automatically.
+
+The migration is prepared locally, not deployed. Client gating works in this codebase, but cloud authorization and the phone conflict target require the deployed migration and live-policy verification. Credentials-unset mock mode still requires demo OTP plus completed registration; it provides no guest browsing. Small local SharedPreferences caches remain the offline fallback for registered sessions.
+
+Verification includes mandatory guest gating, cascading village reset/filtering, isolated three-item farmer/driver drawers, logout returning to OTP, availability-only directory filtering, absence of Farmer View, updated registration journeys, and the driver's `on_conflict=phone` request parameter. Existing unit and widget tests were updated where the commercial requirements deliberately replace former guest and cross-role behavior.

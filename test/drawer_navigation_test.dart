@@ -1,8 +1,8 @@
+import 'package:kolleru_wheels/presentation/driver/load_pool_board.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:kolleru_wheels/core/constants/app_colors.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/data/models/user_profile_model.dart';
 import 'package:kolleru_wheels/data/models/local_driver_profile.dart';
@@ -11,11 +11,9 @@ import 'package:kolleru_wheels/data/repositories/auth_repository.dart';
 import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
 import 'package:kolleru_wheels/data/repositories/mock_directory_repository.dart';
 import 'package:kolleru_wheels/presentation/auth/phone_otp_screen.dart';
-import 'package:kolleru_wheels/presentation/admin/admin_dashboard_screen.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_dashboard_screen.dart';
 import 'package:kolleru_wheels/presentation/driver/visiting_card_screen.dart';
 import 'package:kolleru_wheels/presentation/farmer/home_directory_screen.dart';
-import 'package:kolleru_wheels/presentation/farmer/post_load_bottom_sheet.dart';
 
 Future<void> openDrawer(WidgetTester tester) async {
   tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
@@ -39,115 +37,13 @@ class GatewayFailureAuth extends AuthRepository {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
-  final roleMenus = <String?, List<String>>{
-    null: ['drawer-login'],
-    'driver': [
-      'drawer-driver-dashboard',
-      'drawer-digital-card',
-      'drawer-logout',
-    ],
-    'shipper': ['drawer-farmer-view', 'drawer-post-load', 'drawer-logout'],
-    'admin': ['drawer-admin-monitor', 'drawer-logout'],
-  };
-  for (final role in roleMenus.keys) {
-    testWidgets('${role ?? 'Guest'} drawer has only the expected actions', (
-      tester,
-    ) async {
-      final auth = AuthRepository(mockMode: true);
-      if (role != null) {
-        auth.currentProfile = UserProfile(phone: '+919876543210', role: role);
-      }
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeDirectoryScreen(
-            authRepository: auth,
-            repository: MockDirectoryRepository(),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await openDrawer(tester);
-      final tiles = find.descendant(
-        of: find.byType(Drawer),
-        matching: find.byType(ListTile),
-      );
-      expect(tiles, findsNWidgets(roleMenus[role]!.length));
-      for (final key in roleMenus[role]!) {
-        expect(find.byKey(ValueKey(key)), findsOneWidget);
-      }
-      if (role == null) {
-        await tester.tap(find.byKey(const ValueKey('drawer-login')));
-        await tester.pumpAndSettle();
-        expect(find.byType(PhoneOtpScreen), findsOneWidget);
-      } else if (role == 'admin') {
-        final tile = tester.widget<ListTile>(
-          find.byKey(const ValueKey('drawer-admin-monitor')),
-        );
-        expect(tile.selectedTileColor, AppColors.green);
-        expect(tile.selected, true);
-        await tester.tap(find.byKey(const ValueKey('drawer-admin-monitor')));
-        await tester.pumpAndSettle();
-        expect(find.byType(AdminDashboardScreen), findsOneWidget);
-      } else if (role == 'shipper') {
-        await tester.tap(find.byKey(const ValueKey('drawer-post-load')));
-        await tester.pumpAndSettle();
-        expect(find.byType(PostLoadBottomSheet), findsOneWidget);
-      }
-      await tester.pumpWidget(const SizedBox());
-    });
-  }
-  testWidgets('Driver drawer opens the saved dashboard and own digital card', (
-    tester,
-  ) async {
-    final local = LocalDriverRepository();
-    final village = KolleruVillages.find('pulaparru')!;
-    await local.saveProfile(
-      LocalDriverProfile(
-        id: 'local-test',
-        name: 'Ramesh',
-        phone: '+919876543210',
-        baseVillage: village,
-        currentSpotVillage: village,
-        vehicleType: VehicleType.tataAce,
-        capacityTons: 1,
-        specializations: const [],
-        vehicleNumber: 'AP 39 AB 1234',
-        isAvailable: true,
-      ),
-    );
-    final auth = AuthRepository(mockMode: true)
-      ..currentProfile = const UserProfile(
-        phone: '+919876543210',
-        role: 'driver',
-      );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: HomeDirectoryScreen(
-          authRepository: auth,
-          localDriverRepository: local,
-          repository: MockDirectoryRepository(),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await openDrawer(tester);
-    await tester.tap(find.byKey(const ValueKey('drawer-driver-dashboard')));
-    await tester.pumpAndSettle();
-    expect(find.byType(DriverDashboardScreen), findsOneWidget);
-    tester.state<NavigatorState>(find.byType(Navigator)).pop();
-    await tester.pumpAndSettle();
-    await openDrawer(tester);
-    await tester.tap(find.byKey(const ValueKey('drawer-digital-card')));
-    await tester.pumpAndSettle();
-    expect(find.byType(VisitingCardScreen), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-  });
-  testWidgets('Logout replaces role actions with the single guest login', (
+  testWidgets('Farmer drawer has only own profile, posted loads and logout', (
     tester,
   ) async {
     final auth = AuthRepository(mockMode: true)
       ..currentProfile = const UserProfile(
         phone: '+919876543210',
+        name: 'Farmer',
         role: 'shipper',
       );
     await tester.pumpWidget(
@@ -160,11 +56,64 @@ void main() {
     );
     await tester.pumpAndSettle();
     await openDrawer(tester);
+    expect(
+      find.descendant(of: find.byType(Drawer), matching: find.byType(ListTile)),
+      findsNWidgets(3),
+    );
+    expect(find.byKey(const ValueKey('farmer-profile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('my-posted-loads')), findsOneWidget);
+    expect(find.byKey(const ValueKey('driver-mode')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('drawer-logout')));
     await tester.pumpAndSettle();
+    expect(find.byType(PhoneOtpScreen), findsOneWidget);
+    expect(find.byType(HomeDirectoryScreen), findsNothing);
+    expect(find.byType(LoadPoolBoard), findsNothing);
+  });
+  testWidgets('Driver drawer has only own profile, card and logout', (
+    tester,
+  ) async {
+    final village = KolleruVillages.find('pulaparru')!;
+    final local = LocalDriverRepository();
+    final driver = LocalDriverProfile(
+      id: 'driver-test',
+      name: 'Ramesh',
+      phone: '+919876543210',
+      baseVillage: village,
+      currentSpotVillage: village,
+      vehicleType: VehicleType.tataAce,
+      capacityTons: 1,
+      specializations: const [],
+      vehicleNumber: 'AP 39 AB 1234',
+      isAvailable: true,
+    );
+    await local.saveProfile(driver);
+    final auth = AuthRepository(mockMode: true)
+      ..currentProfile = const UserProfile(
+        phone: '+919876543210',
+        role: 'driver',
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DriverDashboardScreen(
+          profile: driver,
+          repository: local,
+          authRepository: auth,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
     await openDrawer(tester);
-    expect(find.byKey(const ValueKey('drawer-login')), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-logout')), findsNothing);
+    expect(
+      find.descendant(of: find.byType(Drawer), matching: find.byType(ListTile)),
+      findsNWidgets(3),
+    );
+    expect(find.byKey(const ValueKey('driver-profile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('farmer-view')), findsNothing);
+    expect(find.byType(HomeDirectoryScreen), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('drawer-digital-card')));
+    await tester.pumpAndSettle();
+    expect(find.byType(VisitingCardScreen), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
     'Invalid phone never requests SMS; Auth 400 shows the Telugu snackbar',

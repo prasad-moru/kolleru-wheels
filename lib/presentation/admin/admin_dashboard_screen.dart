@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/telemetry_repository.dart';
-import '../farmer/home_directory_screen.dart';
+import '../auth/session_router.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({
@@ -89,7 +89,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute<void>(
-                builder: (_) => const HomeDirectoryScreen(),
+                builder: (_) =>
+                    SessionRouter(repository: widget.authRepository),
               ),
               (_) => false,
             );

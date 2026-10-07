@@ -140,6 +140,7 @@ void main() {
     final client = clientWith((request) async {
       if (offline) throw const SocketException('offline');
       if (request.method == 'POST') {
+        expect(request.url.queryParameters['on_conflict'], 'phone');
         mutations.add(
           Map<String, dynamic>.from(jsonDecode(request.body) as Map),
         );

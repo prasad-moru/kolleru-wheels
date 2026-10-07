@@ -1,3 +1,5 @@
+import 'package:kolleru_wheels/data/repositories/auth_repository.dart';
+import 'package:kolleru_wheels/data/models/user_profile_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,7 +17,15 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'directory_village_id': 'kovvadalanka',
       });
-      await tester.pumpWidget(const KolleruWheelsApp());
+      await tester.pumpWidget(
+        KolleruWheelsApp(
+          authRepository: AuthRepository(mockMode: true)
+            ..currentProfile = const UserProfile(
+              phone: '+919876543210',
+              role: 'shipper',
+            ),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text(AppStrings.tierLocal), 200);
       expect(find.text(AppStrings.tierLocal), findsOneWidget);
@@ -23,8 +33,7 @@ void main() {
       expect(find.text(AppStrings.tierMandal), findsOneWidget);
       await tester.scrollUntilVisible(find.text(AppStrings.tierDelta), 200);
       expect(find.text(AppStrings.tierDelta), findsOneWidget);
-      await tester.scrollUntilVisible(find.text(AppStrings.busyDrivers), 200);
-      expect(find.text(AppStrings.busyDrivers), findsOneWidget);
+      expect(find.text(AppStrings.busyDrivers), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -49,7 +58,15 @@ void main() {
     expect(repo.getDrivers(villageId: 'atapaka'), isEmpty);
   });
   testWidgets('Filter and open visiting card', (tester) async {
-    await tester.pumpWidget(const KolleruWheelsApp());
+    await tester.pumpWidget(
+      KolleruWheelsApp(
+        authRepository: AuthRepository(mockMode: true)
+          ..currentProfile = const UserProfile(
+            phone: '+919876543210',
+            role: 'shipper',
+          ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Kolleru Wheels'), findsOneWidget);
     await tester.ensureVisible(
@@ -60,8 +77,8 @@ void main() {
       find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 2'), 250);
-    expect(find.text('డ్రైవర్లు / Drivers: 2'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250);
+    expect(find.text('డ్రైవర్లు / Drivers: 1'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('రమేష్ / Ramesh'), 150);
     await tester.ensureVisible(find.text('రమేష్ / Ramesh'));
     await tester.pumpAndSettle();
@@ -77,7 +94,15 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await tester.pumpWidget(const KolleruWheelsApp());
+    await tester.pumpWidget(
+      KolleruWheelsApp(
+        authRepository: AuthRepository(mockMode: true)
+          ..currentProfile = const UserProfile(
+            phone: '+919876543210',
+            role: 'shipper',
+          ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });

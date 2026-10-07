@@ -86,7 +86,6 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
             builder: (_) => CompleteProfileScreen(
               phone: AuthRepository.normalizePhone(_phone.text),
               repository: _auth,
-              onCompleted: widget.onVerified,
             ),
           ),
         );

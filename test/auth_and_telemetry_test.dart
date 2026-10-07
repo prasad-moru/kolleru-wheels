@@ -1,3 +1,5 @@
+import 'onboarding_helpers.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -20,6 +22,9 @@ import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/presentation/farmer/home_directory_screen.dart';
 import 'package:kolleru_wheels/presentation/admin/admin_dashboard_screen.dart';
+import 'package:kolleru_wheels/main.dart';
+import 'package:kolleru_wheels/presentation/driver/load_pool_board.dart';
+import 'package:kolleru_wheels/presentation/common/mandal_village_picker.dart';
 
 SupabaseClient mockClient(
   Future<http.Response> Function(http.Request) handler,
@@ -94,6 +99,61 @@ class AuthorizedTestAdmin extends AuthRepository {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
+    'Commercial startup reveals no directory or load pool without a session',
+    (tester) async {
+      final auth = AuthRepository(mockMode: true);
+      await tester.pumpWidget(KolleruWheelsApp(authRepository: auth));
+      await tester.pumpAndSettle();
+      expect(find.byType(PhoneOtpScreen), findsOneWidget);
+      expect(find.byType(HomeDirectoryScreen), findsNothing);
+      expect(find.byType(LoadPoolBoard), findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(home: HomeDirectoryScreen(authRepository: auth)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(PhoneOtpScreen), findsOneWidget);
+      expect(find.text('Kolleru Wheels'), findsNothing);
+    },
+  );
+  testWidgets(
+    'Mandal picker restricts villages and clears the previous selection',
+    (tester) async {
+      String? selected;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Form(
+              child: MandalVillagePicker(
+                onChanged: (value) => selected = value,
+              ),
+            ),
+          ),
+        ),
+      );
+      await chooseCluster(tester);
+      expect(selected, 'pulaparru');
+      await tester.tap(find.byKey(const ValueKey('mandal-picker')));
+      await tester.pumpAndSettle();
+      final kaikaluru = KolleruVillages.mandals.first;
+      await tester.tap(
+        find.text('${kaikaluru.teluguName} / ${kaikaluru.name}').last,
+      );
+      await tester.pumpAndSettle();
+      expect(selected, isNull);
+      final picker = tester.widget<DropdownButtonFormField<String>>(
+        find.byKey(const ValueKey('village-picker-kaikaluru')),
+      );
+      expect(picker.initialValue, isNull);
+      await tester.tap(find.byKey(const ValueKey('village-picker-kaikaluru')));
+      await tester.pumpAndSettle();
+      expect(find.text(KolleruVillages.find('pulaparru')!.label), findsNothing);
+      expect(
+        find.text(KolleruVillages.find('kaikaluru-town')!.label),
+        findsWidgets,
+      );
+    },
+  );
+  testWidgets(
     'New driver saves vehicle details and user profile before dashboard',
     (tester) async {
       final auth = AuthRepository(mockMode: true);
@@ -109,6 +169,10 @@ void main() {
         'Ramesh',
       );
       await tester.tap(find.byKey(const ValueKey('complete-driver')));
+      await chooseCluster(tester);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('complete-profile')),
+      );
       await tester.tap(find.byKey(const ValueKey('complete-profile')));
       await tester.pumpAndSettle();
       expect(auth.currentProfile, isNull);
@@ -126,20 +190,6 @@ void main() {
         await tester.ensureVisible(find.byKey(ValueKey(field.key)));
         await tester.enterText(find.byKey(ValueKey(field.key)), field.value);
       }
-      final picker = find.byType(DropdownButtonFormField<String>);
-      await tester.ensureVisible(picker);
-      await tester.tap(picker);
-      await tester.pumpAndSettle();
-      final village = find.text(
-        '${KolleruVillages.find('pulaparru')!.label} (Mandavalli)',
-      );
-      await tester.scrollUntilVisible(
-        village,
-        200,
-        scrollable: find.byType(Scrollable).last,
-      );
-      await tester.tap(village.last);
-      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const ValueKey('register-driver')));
       await tester.tap(find.byKey(const ValueKey('register-driver')));
       await tester.pumpAndSettle();
@@ -238,6 +288,8 @@ void main() {
       find.byKey(const ValueKey('complete-name')),
       'Farmer',
     );
+    await chooseCluster(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('complete-profile')));
     await tester.tap(find.byKey(const ValueKey('complete-profile')));
     await tester.pumpAndSettle();
     expect(find.byType(HomeDirectoryScreen), findsOneWidget);
@@ -501,6 +553,10 @@ void main() {
         'Ramesh',
       );
       await tester.tap(find.byKey(const ValueKey('complete-driver')));
+      await chooseCluster(tester);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('complete-profile')),
+      );
       await tester.tap(find.byKey(const ValueKey('complete-profile')));
       await tester.pumpAndSettle();
       expect(find.byType(DriverRegistrationScreen), findsOneWidget);
@@ -520,8 +576,13 @@ void main() {
     'Shipper returns to directory; cached admin cannot read monitor data',
     (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
           home: RoleDestination(
+            authRepository: AuthRepository(mockMode: true)
+              ..currentProfile = const UserProfile(
+                phone: '+919876543210',
+                role: 'shipper',
+              ),
             profile: UserProfile(phone: '+919876543210', role: 'shipper'),
           ),
         ),

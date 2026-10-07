@@ -6,23 +6,18 @@ import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/vehicle_type.dart';
-import '../../data/models/local_driver_profile.dart';
 import '../../data/models/driver_model.dart';
 import '../../data/repositories/supabase_driver_repository.dart';
 import '../../data/repositories/supabase_load_request_repository.dart';
-import '../../data/repositories/offline_table_store.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
 import '../../data/repositories/auth_repository.dart';
-import '../auth/phone_otp_screen.dart';
-import '../auth/role_destination.dart';
-import '../admin/admin_dashboard_screen.dart';
+import '../auth/session_router.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
 import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
-import '../driver/driver_mode_screen.dart';
 import 'post_load_bottom_sheet.dart';
 
 class HomeDirectoryScreen extends StatefulWidget {
@@ -47,32 +42,39 @@ class HomeDirectoryScreen extends StatefulWidget {
 
 class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   late final DirectoryRepository _repository;
-  late final LocalDriverRepository _localRepository;
   late final AuthRepository _auth;
-  LocalDriverProfile? _localProfile;
   List<DriverModel>? _liveDrivers;
   late final SupabaseDriverRepository _remoteDrivers;
   bool _remoteLoading = false;
   bool _cachedDrivers = false;
-  bool _profileLoadFailed = false;
   String? _villageId;
   VehicleType? _vehicle;
-  bool _availableOnly = false;
+  final bool _availableOnly = true;
   bool _selectionChanged = false;
   static const _preferenceKey = 'directory_village_id';
   @override
   void initState() {
     super.initState();
     _repository = widget.repository ?? MockDirectoryRepository();
-    _localRepository = widget.localDriverRepository ?? LocalDriverRepository();
     _auth = widget.authRepository ?? AuthRepository.instance;
+    _auth.addListener(_identityChanged);
     _remoteDrivers =
         widget.remoteDriverRepository ?? SupabaseDriverRepository.instance;
+    if (_auth.currentProfile?.role != 'shipper') return;
     if (widget.repository == null || widget.remoteDriverRepository != null) {
       _fetchDrivers();
     }
-    _loadLocalProfile();
     _restoreVillage();
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _auth.removeListener(_identityChanged);
+    super.dispose();
   }
 
   Future<void> _fetchDrivers() async {
@@ -93,87 +95,60 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
   }
 
-  Future<void> _loadLocalProfile() async {
+  Future<void> _logout() async {
     try {
-      final profile = await _localRepository.getProfile();
-      if (mounted) {
-        setState(() {
-          _localProfile = profile;
-          _profileLoadFailed = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _profileLoadFailed = true);
-    }
-  }
-
-  Future<void> _openDriverMode() async {
-    if (widget.onDriverMode != null) {
-      widget.onDriverMode!();
-      return;
-    }
-    if (!_auth.isMock && _auth.currentProfile?.role != 'driver') {
-      await _openSignIn();
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => DriverModeScreen(
-          repository: _localRepository,
-          verifiedPhone: _auth.currentProfile?.role == 'driver'
-              ? _auth.currentProfile?.phone
-              : null,
-          loadRequestRepository: widget.loadRequestRepository,
-        ),
-      ),
+      await _auth.signOut();
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => SessionRouter(repository: _auth)),
+      (_) => false,
     );
-    if (mounted) {
-      await _loadLocalProfile();
-      await _fetchDrivers();
-    }
   }
 
-  Future<void> _openSignIn() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PhoneOtpScreen(
-          repository: _auth,
-          onVerified: (profile) => Navigator.of(context).pushReplacement(
-            MaterialPageRoute<void>(
-              builder: (_) => RoleDestination(profile: profile),
-            ),
+  Future<void> _myLoads() async {
+    final phone = _auth.currentProfile!.phone;
+    final repository =
+        widget.loadRequestRepository ?? LoadRequestRepository.instance;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .7,
+          child: FutureBuilder(
+            future: repository.getActiveRequests(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Center(child: Text(AppStrings.loadFailed));
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final requests = snapshot.data!
+                  .where((r) => r.posterPhone == phone)
+                  .toList();
+              return ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  const Text('My Posted Loads'),
+                  if (requests.isEmpty) const Text('No active posts'),
+                  for (final request in requests)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '${request.fromLocation} -> ${request.toVillage.label}\n${request.materialType}',
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _openDigitalCard() async {
-    try {
-      final driver = await _localRepository.getProfile();
-      if (!mounted) return;
-      if (driver == null || driver.phone != _auth.currentProfile?.phone) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'ముందుగా డ్రైవర్ నమోదు పూర్తి చేయండి / Complete driver registration first.',
-            ),
-          ),
-        );
-        return;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => VisitingCardScreen(driver: driver.toDriverModel()),
-        ),
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text(AppStrings.loadFailed)));
-      }
-    }
   }
 
   Future<void> _postLoad() async {
@@ -184,6 +159,8 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         repository:
             widget.loadRequestRepository ?? LoadRequestRepository.instance,
         initialVillageId: _villageId,
+        posterPhone: _auth.currentProfile!.phone,
+        posterName: _auth.currentProfile!.name,
       ),
     );
     if (mounted && posted == true) {
@@ -234,6 +211,9 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_auth.currentProfile?.role != 'shipper') {
+      return SessionRouter(repository: _auth);
+    }
     final drivers = [
       ...(_liveDrivers?.isNotEmpty == true
           ? _liveDrivers!.where(
@@ -246,17 +226,6 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
               availableOnly: _availableOnly,
             )),
     ];
-    final local = _localProfile;
-    if (local != null &&
-        (_vehicle == null || local.vehicleType == _vehicle) &&
-        (!_availableOnly || local.isAvailable)) {
-      drivers.insert(0, local.toDriverModel());
-      drivers.removeWhere(
-        (d) =>
-            d.id != local.id &&
-            d.id == OfflineTableStore.cloudId('drivers', local.id),
-      );
-    }
     final headings = <String, String>{};
     if (_villageId != null) {
       final result = ProximityMatcher.match(
@@ -289,108 +258,36 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
             onPressed: _remoteLoading ? null : _fetchDrivers,
             icon: const Icon(Icons.refresh),
           ),
-          IconButton(
-            key: const ValueKey('driver-mode'),
-            tooltip: AppStrings.driverMode,
-            onPressed: _openDriverMode,
-            icon: const Icon(Icons.person_pin),
-          ),
         ],
       ),
       drawer: Drawer(
         child: SafeArea(
           child: ListView(
             children: [
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Kolleru Wheels',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
+              ListTile(
+                key: const ValueKey('farmer-profile'),
+                leading: const Icon(Icons.person),
+                title: Text(_auth.currentProfile!.name),
+                subtitle: Text(_auth.currentProfile!.phone),
               ),
-              if (_auth.currentProfile == null)
-                ListTile(
-                  key: const ValueKey('drawer-login'),
-                  leading: const Icon(Icons.login),
-                  title: const Text('లాగిన్ / నమోదు (Login / Sign in)'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _openSignIn();
-                  },
-                ),
-              if (_auth.currentProfile?.role == 'driver') ...[
-                ListTile(
-                  key: const ValueKey('drawer-driver-dashboard'),
-                  leading: const Icon(Icons.person_pin),
-                  title: const Text('డ్రైవర్ డ్యాష్‌బోర్డ్ (Driver Dashboard)'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _openDriverMode();
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-digital-card'),
-                  leading: const Icon(Icons.badge),
-                  title: const Text('విజిటింగ్ కార్డ్ (Digital Card)'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _openDigitalCard();
-                  },
-                ),
-              ],
-              if (_auth.currentProfile?.role == 'shipper') ...[
-                ListTile(
-                  key: const ValueKey('drawer-farmer-view'),
-                  leading: const Icon(Icons.agriculture),
-                  title: const Text('రైతు వీక్షణ (Farmer View)'),
-                  onTap: () => Navigator.of(context).pop(),
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-post-load'),
-                  leading: const Icon(Icons.campaign),
-                  title: const Text('అత్యవసర లోడ్ పోస్ట్ చేయండి (Post Load)'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _postLoad();
-                  },
-                ),
-              ],
-              if (_auth.currentProfile?.role == 'admin')
-                ListTile(
-                  key: const ValueKey('drawer-admin-monitor'),
-                  selected: true,
-                  selectedColor: Colors.white,
-                  selectedTileColor: AppColors.green,
-                  leading: const Icon(Icons.admin_panel_settings),
-                  title: const Text(
-                    'నిర్వాహకుల ప్యానెల్ / Admin Monitor',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            AdminDashboardScreen(authRepository: _auth),
-                      ),
-                    );
-                  },
-                ),
-              if (_auth.currentProfile != null)
-                ListTile(
-                  key: const ValueKey('drawer-logout'),
-                  leading: const Icon(Icons.logout),
-                  title: const Text('లాగౌట్ (Logout)'),
-                  onTap: () async {
-                    Navigator.of(context).pop();
-                    try {
-                      await _auth.signOut();
-                    } catch (_) {
-                      /* Local identity has been cleared. */
-                    }
-                    if (mounted) setState(() {});
-                  },
-                ),
+              ListTile(
+                key: const ValueKey('my-posted-loads'),
+                leading: const Icon(Icons.inventory),
+                title: const Text('My Posted Loads'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _myLoads();
+                },
+              ),
+              ListTile(
+                key: const ValueKey('drawer-logout'),
+                leading: const Icon(Icons.logout),
+                title: const Text('Logout'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _logout();
+                },
+              ),
             ],
           ),
         ),
@@ -422,13 +319,6 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                         : 'లైవ్ వాహనాలు / Live drivers')
                   : AppStrings.demo,
             ),
-            if (_profileLoadFailed)
-              TextButton(
-                onPressed: _loadLocalProfile,
-                child: const Text(
-                  '${AppStrings.loadFailed} — ${AppStrings.retry}',
-                ),
-              ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               key: ValueKey(_villageId),
@@ -507,12 +397,6 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
               onPressed: () => setState(() => _vehicle = null),
               child: const Text(AppStrings.allVehicles),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(AppStrings.availableOnly),
-              value: _availableOnly,
-              onChanged: (value) => setState(() => _availableOnly = value),
-            ),
             const AudioCueButton(),
             const SizedBox(height: 20),
             Text(
@@ -528,7 +412,6 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                 onPressed: () {
                   setState(() {
                     _vehicle = null;
-                    _availableOnly = false;
                   });
                   _selectVillage(null);
                 },

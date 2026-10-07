@@ -11,7 +11,7 @@ import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/supabase_driver_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
-import '../farmer/home_directory_screen.dart';
+import '../auth/session_router.dart';
 import 'visiting_card_screen.dart';
 import 'load_pool_board.dart';
 
@@ -21,8 +21,10 @@ class DriverDashboardScreen extends StatefulWidget {
     required this.profile,
     required this.repository,
     this.loadRequestRepository,
+    this.authRepository,
   });
   final LocalDriverProfile profile;
+  final AuthRepository? authRepository;
   final LocalDriverRepository repository;
   final LoadRequestRepository? loadRequestRepository;
   @override
@@ -31,6 +33,7 @@ class DriverDashboardScreen extends StatefulWidget {
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   late LocalDriverProfile _profile;
+  late final _auth = widget.authRepository ?? AuthRepository.instance;
   bool _saving = false;
   bool _syncPending = false;
   final _remoteDriver = SupabaseDriverRepository.instance;
@@ -38,7 +41,21 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   void initState() {
     super.initState();
     _profile = widget.profile;
-    _syncDriver();
+    _auth.addListener(_identityChanged);
+    if (_auth.currentProfile?.role == 'driver' &&
+        _auth.currentProfile?.phone == _profile.phone) {
+      _syncDriver();
+    }
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _auth.removeListener(_identityChanged);
+    super.dispose();
   }
 
   Future<void> _syncDriver() async {
@@ -115,174 +132,200 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text(AppStrings.dashboard),
-      actions: [
-        if (AuthRepository.instance.currentProfile != null)
-          IconButton(
-            tooltip: 'లాగ్ అవుట్ / Sign out',
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await AuthRepository.instance.signOut();
-              } catch (_) {
-                /* Local sign-out completed. */
-              }
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute<void>(
-                  builder: (_) => const HomeDirectoryScreen(),
-                ),
-                (_) => false,
-              );
-            },
-          ),
-      ],
-    ),
-    body: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(_profile.name, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: _profile.isAvailable ? AppColors.green : AppColors.busyRed,
-              borderRadius: BorderRadius.circular(16),
+  Widget build(BuildContext context) =>
+      _auth.currentProfile?.role != 'driver' ||
+          _auth.currentProfile?.phone != _profile.phone
+      ? SessionRouter(repository: _auth)
+      : Scaffold(
+          appBar: AppBar(title: const Text(AppStrings.dashboard)),
+          drawer: Drawer(
+            child: SafeArea(
+              child: ListView(
+                children: [
+                  ListTile(
+                    key: const ValueKey('driver-profile'),
+                    leading: const Icon(Icons.person),
+                    title: Text(_profile.name),
+                    subtitle: Text(_profile.phone),
+                  ),
+                  ListTile(
+                    key: const ValueKey('drawer-digital-card'),
+                    leading: const Icon(Icons.badge),
+                    title: const Text(
+                      'విజిటింగ్ కార్డ్ / Digital Visiting Card',
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => VisitingCardScreen(
+                            driver: _profile.toDriverModel(),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    key: const ValueKey('drawer-logout'),
+                    leading: const Icon(Icons.logout),
+                    title: const Text('లాగౌట్ / Logout'),
+                    onTap: () async {
+                      try {
+                        await _auth.signOut();
+                      } catch (_) {}
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute<void>(
+                          builder: (_) => SessionRouter(repository: _auth),
+                        ),
+                        (_) => false,
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-            child: Column(
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
               children: [
-                Icon(
-                  _profile.isAvailable
-                      ? Icons.check_circle
-                      : Icons.do_not_disturb_on,
-                  size: 48,
-                  color: Colors.white,
-                ),
-                const SizedBox(height: 12),
                 Text(
-                  _profile.isAvailable
-                      ? AppStrings.availableForLoads
-                      : AppStrings.currentlyBusy,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                  _profile.name,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: _profile.isAvailable
+                        ? AppColors.green
+                        : AppColors.busyRed,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        _profile.isAvailable
+                            ? Icons.check_circle
+                            : Icons.do_not_disturb_on,
+                        size: 48,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _profile.isAvailable
+                            ? AppStrings.availableForLoads
+                            : AppStrings.currentlyBusy,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Semantics(
+                        label: _profile.isAvailable
+                            ? AppStrings.availableForLoads
+                            : AppStrings.currentlyBusy,
+                        child: Transform.scale(
+                          scale: 1.4,
+                          child: Switch(
+                            key: const ValueKey('driver-availability'),
+                            value: _profile.isAvailable,
+                            activeThumbColor: Colors.white,
+                            activeTrackColor: AppColors.charcoal,
+                            inactiveThumbColor: Colors.white,
+                            inactiveTrackColor: AppColors.charcoal,
+                            onChanged: _saving
+                                ? null
+                                : (value) => _save(
+                                    () => widget.repository.updateAvailability(
+                                      value,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      if (_saving)
+                        const Text(
+                          AppStrings.saving,
+                          style: TextStyle(color: Colors.white),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  AppStrings.currentLocation,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ActionChip(
+                    key: const ValueKey('current-spot'),
+                    avatar: const Icon(Icons.edit_location_alt),
+                    label: Text(_profile.currentSpotLabel),
+                    padding: const EdgeInsets.all(12),
+                    onPressed: _saving ? null : _chooseSpot,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                VehicleBadge(type: _profile.vehicleType, size: 112),
+                Text(
+                  _profile.vehicleType.label,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Text(
+                  '${AppStrings.baseVillage}: ${_profile.baseVillage.label}',
+                ),
+                Text(
+                  '${AppStrings.capacity}: ${_profile.capacityTons} టన్నులు / Tons',
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  key: const ValueKey('dashboard-visiting-card'),
+                  onPressed: _saving
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => VisitingCardScreen(
+                              driver: _profile.toDriverModel(),
+                            ),
+                          ),
+                        ),
+                  icon: const Icon(Icons.badge),
+                  label: const Text(
+                    AppStrings.digitalCard,
+                    textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: 12),
-                Semantics(
-                  label: _profile.isAvailable
-                      ? AppStrings.availableForLoads
-                      : AppStrings.currentlyBusy,
-                  child: Transform.scale(
-                    scale: 1.4,
-                    child: Switch(
-                      key: const ValueKey('driver-availability'),
-                      value: _profile.isAvailable,
-                      activeThumbColor: Colors.white,
-                      activeTrackColor: AppColors.charcoal,
-                      inactiveThumbColor: Colors.white,
-                      inactiveTrackColor: AppColors.charcoal,
-                      onChanged: _saving
-                          ? null
-                          : (value) => _save(
-                              () => widget.repository.updateAvailability(value),
-                            ),
+                const SizedBox(height: 16),
+                const Text(AppStrings.localProfileNote),
+                if (_syncPending)
+                  TextButton(
+                    onPressed: _saving ? null : _syncDriver,
+                    child: const Text(
+                      'ఫోన్‌లో సేవ్ అయింది • క్లౌడ్ సింక్ పెండింగ్ / Saved locally • cloud sync pending',
                     ),
                   ),
+                const SizedBox(height: 24),
+                LoadPoolBoard(
+                  callerPhone: _profile.phone,
+                  operationalMandalId:
+                      ProximityMatcher.mandalId(
+                        _profile.currentSpotVillage.id,
+                      ) ??
+                      ProximityMatcher.mandalId(_profile.baseVillage.id),
+                  repository:
+                      widget.loadRequestRepository ??
+                      LoadRequestRepository.instance,
                 ),
-                if (_saving)
-                  const Text(
-                    AppStrings.saving,
-                    style: TextStyle(color: Colors.white),
-                  ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            AppStrings.currentLocation,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ActionChip(
-              key: const ValueKey('current-spot'),
-              avatar: const Icon(Icons.edit_location_alt),
-              label: Text(_profile.currentSpotLabel),
-              padding: const EdgeInsets.all(12),
-              onPressed: _saving ? null : _chooseSpot,
-            ),
-          ),
-          const SizedBox(height: 20),
-          VehicleBadge(type: _profile.vehicleType, size: 112),
-          Text(
-            _profile.vehicleType.label,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          Text('${AppStrings.baseVillage}: ${_profile.baseVillage.label}'),
-          Text(
-            '${AppStrings.capacity}: ${_profile.capacityTons} టన్నులు / Tons',
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            key: const ValueKey('dashboard-visiting-card'),
-            onPressed: _saving
-                ? null
-                : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          VisitingCardScreen(driver: _profile.toDriverModel()),
-                    ),
-                  ),
-            icon: const Icon(Icons.badge),
-            label: const Text(
-              AppStrings.digitalCard,
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            key: const ValueKey('farmer-view'),
-            onPressed: _saving
-                ? null
-                : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (context) => HomeDirectoryScreen(
-                        localDriverRepository: widget.repository,
-                        loadRequestRepository: widget.loadRequestRepository,
-                        onDriverMode: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                  ),
-            icon: const Icon(Icons.agriculture),
-            label: const Text(AppStrings.farmerView),
-          ),
-          const SizedBox(height: 16),
-          const Text(AppStrings.localProfileNote),
-          if (_syncPending)
-            TextButton(
-              onPressed: _saving ? null : _syncDriver,
-              child: const Text(
-                'ఫోన్‌లో సేవ్ అయింది • క్లౌడ్ సింక్ పెండింగ్ / Saved locally • cloud sync pending',
-              ),
-            ),
-          const SizedBox(height: 24),
-          LoadPoolBoard(
-            callerPhone: _profile.phone,
-            operationalMandalId:
-                ProximityMatcher.mandalId(_profile.currentSpotVillage.id) ??
-                ProximityMatcher.mandalId(_profile.baseVillage.id),
-            repository:
-                widget.loadRequestRepository ?? LoadRequestRepository.instance,
-          ),
-        ],
-      ),
-    ),
-  );
+        );
 }

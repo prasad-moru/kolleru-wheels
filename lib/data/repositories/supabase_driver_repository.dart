@@ -94,7 +94,7 @@ class SupabaseDriverRepository {
       try {
         final confirmed = await _client
             .from('drivers')
-            .upsert(row, onConflict: 'id')
+            .upsert(row, onConflict: 'phone')
             .select('id')
             .timeout(const Duration(seconds: 8));
         if (confirmed.length != 1 || confirmed.single['id'] != row['id']) {

@@ -1,3 +1,8 @@
+import 'onboarding_helpers.dart';
+
+import 'package:kolleru_wheels/data/repositories/auth_repository.dart';
+import 'package:kolleru_wheels/data/models/user_profile_model.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -51,7 +56,14 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    AuthRepository.instance.currentProfile = const UserProfile(
+      phone: '+919876543210',
+      role: 'driver',
+    );
+  });
+  tearDown(() => AuthRepository.instance.currentProfile = null);
 
   test(
     'Profile survives repository recreation and concurrent field updates',
@@ -98,11 +110,14 @@ void main() {
   );
 
   testWidgets(
-    'Register, persist, update dashboard, and return to farmer view',
+    'Register, persist, update dashboard, and retain driver isolation',
     (tester) async {
-      await tester.pumpWidget(const KolleruWheelsApp());
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('driver-mode')));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: DriverModeScreen(repository: LocalDriverRepository()),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(DriverRegistrationScreen), findsOneWidget);
       for (final entry in {
@@ -119,17 +134,7 @@ void main() {
         tester,
         find.byKey(const ValueKey('register-vehicle-tataAce')),
       );
-      await tapVisible(tester, find.byType(DropdownButtonFormField<String>));
-      final pulaparru = find.text(
-        '${KolleruVillages.find('pulaparru')!.label} (Mandavalli)',
-      );
-      await tester.scrollUntilVisible(
-        pulaparru,
-        200,
-        scrollable: find.byType(Scrollable).last,
-      );
-      await tester.tap(pulaparru.last);
-      await tester.pumpAndSettle();
+      await chooseCluster(tester);
       await tapVisible(
         tester,
         find.widgetWithText(FilterChip, AppStrings.specializationOptions[2]),
@@ -176,22 +181,11 @@ void main() {
       expect(card.driver.currentSpot, DriverSpots.hubs.first.label);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tapVisible(tester, find.byKey(const ValueKey('farmer-view')));
-      await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 7'), 300);
-      expect(find.text('డ్రైవర్లు / Drivers: 7'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('driver-mode')));
-      await tester.pumpAndSettle();
-      expect(find.byType(DriverDashboardScreen), findsOneWidget);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 7'), 300);
-      expect(find.text('డ్రైవర్లు / Drivers: 7'), findsOneWidget);
+      expect(find.byKey(const ValueKey('farmer-view')), findsNothing);
       // Restart the widget tree: Driver Mode must reopen the saved dashboard.
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
       await tester.pumpWidget(const KolleruWheelsApp());
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('driver-mode')));
       await tester.pumpAndSettle();
       expect(find.byType(DriverRegistrationScreen), findsNothing);
       expect(find.text(AppStrings.currentlyBusy), findsOneWidget);
@@ -246,7 +240,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('farmer-view')),
+      find.byKey(const ValueKey('dashboard-visiting-card')),
       250,
     );
     await tester.pumpAndSettle();

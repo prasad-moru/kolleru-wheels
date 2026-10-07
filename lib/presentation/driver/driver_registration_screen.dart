@@ -11,7 +11,7 @@ import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
-import '../common/village_picker.dart';
+import '../common/mandal_village_picker.dart';
 import '../auth/role_destination.dart';
 import 'driver_dashboard_screen.dart';
 
@@ -23,12 +23,14 @@ class DriverRegistrationScreen extends StatefulWidget {
     this.loadRequestRepository,
     this.verifiedPhone,
     this.initialName,
+    this.initialVillageId,
     this.authRepository,
     this.completeUserProfile = false,
   });
   final LocalDriverRepository repository;
   final String? verifiedPhone;
   final String? initialName;
+  final String? initialVillageId;
   final AuthRepository? authRepository;
   final bool completeUserProfile;
   final LoadRequestRepository? loadRequestRepository;
@@ -54,6 +56,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   void initState() {
     super.initState();
     _name.text = widget.initialName ?? '';
+    _villageId = widget.initialVillageId;
     if (widget.verifiedPhone != null) {
       _phone.text = widget.verifiedPhone!.substring(3);
     }
@@ -100,6 +103,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               phone: profile.phone,
               name: profile.name,
               role: 'driver',
+              villageId: _villageId,
             );
         if (!mounted) return;
         if (user.role != 'driver') {
@@ -123,6 +127,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         MaterialPageRoute<void>(
           builder: (_) => DriverDashboardScreen(
             profile: profile,
+            authRepository: widget.authRepository,
             repository: widget.repository,
             loadRequestRepository: widget.loadRequestRepository,
           ),
@@ -281,8 +286,9 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                   },
                 ),
                 const SizedBox(height: 20),
-                VillagePicker(
+                MandalVillagePicker(
                   key: const ValueKey('driver-village'),
+                  initialVillageId: _villageId,
                   onChanged: (id) => _villageId = id,
                 ),
                 const SizedBox(height: 20),

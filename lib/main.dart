@@ -5,12 +5,9 @@ import 'core/constants/supabase_config.dart';
 import 'data/repositories/load_request_repository.dart';
 import 'data/repositories/supabase_load_request_repository.dart';
 import 'data/repositories/auth_repository.dart';
-import 'data/models/user_profile_model.dart';
-import 'presentation/auth/role_destination.dart';
-import 'presentation/auth/complete_profile_screen.dart';
+import 'presentation/auth/session_router.dart';
 
 import 'core/theme/app_theme.dart';
-import 'presentation/farmer/home_directory_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,36 +19,22 @@ Future<void> main() async {
       );
       SupabaseConfig.client = Supabase.instance.client;
     } catch (_) {
-      /* Local browsing remains available if SDK startup fails. */
+      /* Sign-in remains gated if SDK startup fails. */
     }
   }
   LoadRequestRepository.instance = SupabaseLoadRequestRepository();
-  final profile = await AuthRepository.instance.restoreSession();
-  runApp(
-    KolleruWheelsApp(
-      initialProfile: profile,
-      onboardingPhone: AuthRepository.instance.onboardingPhone,
-    ),
-  );
+  await AuthRepository.instance.restoreSession();
+  runApp(const KolleruWheelsApp());
 }
 
 class KolleruWheelsApp extends StatelessWidget {
-  const KolleruWheelsApp({
-    super.key,
-    this.initialProfile,
-    this.onboardingPhone,
-  });
-  final UserProfile? initialProfile;
-  final String? onboardingPhone;
+  const KolleruWheelsApp({super.key, this.authRepository});
+  final AuthRepository? authRepository;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Kolleru Wheels',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    home: initialProfile == null
-        ? (onboardingPhone == null
-              ? const HomeDirectoryScreen()
-              : CompleteProfileScreen(phone: onboardingPhone!))
-        : RoleDestination(profile: initialProfile!),
+    home: SessionRouter(repository: authRepository),
   );
 }

@@ -4,6 +4,7 @@ import '../../data/models/user_profile_model.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../driver/driver_registration_screen.dart';
+import '../common/mandal_village_picker.dart';
 import 'role_destination.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _name = TextEditingController();
   late final _auth = widget.repository ?? AuthRepository.instance;
   String _role = 'shipper';
+  String? _villageId;
   bool _saving = false;
   String? _error;
   Future<void> _complete() async {
@@ -37,6 +39,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             repository: LocalDriverRepository(),
             verifiedPhone: widget.phone,
             initialName: _name.text.trim(),
+            initialVillageId: _villageId,
             authRepository: _auth,
             completeUserProfile: true,
           ),
@@ -53,6 +56,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         phone: widget.phone,
         name: _name.text,
         role: 'shipper',
+        villageId: _villageId,
       );
       if (!mounted) return;
       if (widget.onCompleted != null) {
@@ -128,6 +132,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 24),
+            MandalVillagePicker(onChanged: (id) => _villageId = id),
             const SizedBox(height: 24),
             FilledButton(
               key: const ValueKey('complete-profile'),
