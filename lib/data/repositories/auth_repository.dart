@@ -8,6 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/supabase_config.dart';
 import '../models/user_profile_model.dart';
+import '../models/local_driver_profile.dart';
+import 'local_driver_repository.dart';
+import 'supabase_driver_repository.dart';
 
 /// Cached identity restores offline UX, never server authorization.
 class AuthRepository extends ChangeNotifier {
@@ -106,6 +109,7 @@ class AuthRepository extends ChangeNotifier {
   Future<UserProfile?> verifyOTP({
     required String phone,
     required String token,
+    bool publishSession = true,
   }) async {
     final normalized = normalizePhone(phone);
     if (_pendingPhone != normalized || !RegExp(r'^\d{6}$').hasMatch(token)) {
@@ -133,10 +137,10 @@ class AuthRepository extends ChangeNotifier {
         : await _remoteProfile(normalized);
     if (profile == null) {
       await _markOnboarding(normalized);
-    } else {
+    } else if (publishSession) {
       await _cache(profile);
     }
-    currentProfile = profile;
+    if (publishSession || profile == null) currentProfile = profile;
     _pendingPhone = null;
     return profile;
   }
@@ -176,6 +180,7 @@ class AuthRepository extends ChangeNotifier {
     required String name,
     required String role,
     String? villageId,
+    bool publishSession = true,
   }) async {
     final normalized = normalizePhone(phone);
     if (verifiedPhone != normalized) {
@@ -213,6 +218,44 @@ class AuthRepository extends ChangeNotifier {
             ? await _remoteProfile(normalized)
             : UserProfile.fromJson(row);
         if (profile == null) throw StateError('Profile save was not confirmed');
+      }
+    }
+    if (publishSession) {
+      await _cache(profile);
+      currentProfile = profile;
+    }
+    return profile;
+  }
+
+  /// Publish the logged-in identity only after all registration data is saved.
+  /// Remote driver writes use the durable offline outbox; no partial identity
+  /// notification can send the router into a second vehicle form.
+  Future<UserProfile> completeRegistration({
+    required String phone,
+    required String name,
+    required String role,
+    required String villageId,
+    LocalDriverProfile? driver,
+  }) async {
+    final normalized = normalizePhone(phone);
+    if (verifiedPhone != normalized ||
+        (role == 'driver' && driver == null) ||
+        (driver != null && (role != 'driver' || driver.phone != normalized))) {
+      throw StateError('Verified registration details are required');
+    }
+    final profile = await createUserProfile(
+      phone: normalized,
+      name: name,
+      role: role,
+      villageId: villageId,
+      publishSession: false,
+    );
+    if (profile.role == 'driver' && driver != null) {
+      await LocalDriverRepository().saveProfile(driver);
+      if (!isMock) {
+        await SupabaseDriverRepository.instance.upsertDriver(
+          driver.toDriverModel(),
+        );
       }
     }
     await _cache(profile);

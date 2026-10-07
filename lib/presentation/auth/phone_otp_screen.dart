@@ -10,8 +10,10 @@ import '../../data/models/user_profile_model.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/local_driver_repository.dart';
-import '../../data/repositories/supabase_driver_repository.dart';
 import '../common/mandal_village_picker.dart';
+import '../driver/driver_dashboard_screen.dart';
+import '../farmer/home_directory_screen.dart';
+import 'role_destination.dart';
 
 class PhoneOtpScreen extends StatefulWidget {
   const PhoneOtpScreen({super.key, this.repository, required this.onVerified});
@@ -106,8 +108,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
       _error = null;
     });
     try {
-      // Save vehicle details before publishing identity: the session router
-      // can immediately build the driver's destination on profile notification.
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
       LocalDriverProfile? driver;
       if (_role == 'driver') {
         final village = KolleruVillages.find(_villageId)!;
@@ -123,18 +125,38 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
           vehicleNumber: _number.text.trim().toUpperCase(),
           isAvailable: true,
         );
-        await LocalDriverRepository().saveProfile(driver);
       }
-      final profile = await _auth.createUserProfile(
+      final profile = await _auth.completeRegistration(
         phone: _verifiedPhone!,
         name: _name.text,
         role: _role,
-        villageId: _villageId,
+        villageId: _villageId!,
+        driver: driver,
       );
-      if (driver != null && profile.role == 'driver' && !_auth.isMock) {
-        await SupabaseDriverRepository().upsertDriver(driver.toDriverModel());
-      }
-      if (mounted) widget.onVerified(profile);
+      if (!mounted) return;
+      _timer?.cancel();
+      navigator.pushAndRemoveUntil<void>(
+        MaterialPageRoute(
+          builder: (_) => profile.role == 'driver' && driver != null
+              ? DriverDashboardScreen(
+                  profile: driver,
+                  repository: LocalDriverRepository(),
+                  authRepository: _auth,
+                )
+              : profile.role == 'shipper'
+              ? HomeDirectoryScreen(authRepository: _auth)
+              : RoleDestination(profile: profile, authRepository: _auth),
+        ),
+        (_) => false,
+      );
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('నమోదు విజయవంతమైంది! / Registration Successful!'),
+          ),
+        );
+      widget.onVerified(profile);
     } catch (_) {
       _showError(
         'నమోదు సేవ్ కాలేదు. మళ్లీ ప్రయత్నించండి / Could not save registration. Please retry.',
@@ -158,24 +180,24 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
       final profile = await _auth.verifyOTP(
         phone: _phone.text,
         token: _otp.text,
+        publishSession: !_register,
       );
       if (!mounted) return;
-      if (profile != null) {
+      if (_register) {
+        _verifiedPhone = AuthRepository.normalizePhone(_phone.text);
+        await _completeRegistration();
+      } else if (profile != null) {
         widget.onVerified(profile);
       } else {
         _verifiedPhone = AuthRepository.normalizePhone(_phone.text);
-        if (_register) {
-          await _completeRegistration();
-        } else {
-          setState(() {
-            _register = true;
-            _sent = false;
-            _otp.clear();
-          });
-          _showError(
-            'ఖాతా కనుగొనబడలేదు. దయచేసి నమోదు చేసుకోండి (Account not found. Please register)',
-          );
-        }
+        setState(() {
+          _register = true;
+          _sent = false;
+          _otp.clear();
+        });
+        _showError(
+          'ఖాతా కనుగొనబడలేదు. దయచేసి నమోదు చేసుకోండి (Account not found. Please register)',
+        );
       }
     } catch (_) {
       _showError('OTP సరికాదు / Verification failed. Check code or resend.');

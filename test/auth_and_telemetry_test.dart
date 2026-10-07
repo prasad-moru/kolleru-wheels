@@ -17,6 +17,7 @@ import 'package:kolleru_wheels/presentation/auth/complete_profile_screen.dart';
 import 'package:kolleru_wheels/presentation/auth/role_destination.dart';
 import 'package:kolleru_wheels/presentation/common/call_button.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_dashboard_screen.dart';
+import 'package:kolleru_wheels/presentation/driver/driver_registration_screen.dart';
 import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/presentation/farmer/home_directory_screen.dart';
@@ -564,21 +565,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(verified?.role, 'shipper');
     expect(verified?.villageId, isNotNull);
+    expect(find.byType(HomeDirectoryScreen), findsOneWidget);
+    expect(find.byType(PhoneOtpScreen), findsNothing);
+    expect(find.textContaining('Registration Successful!'), findsOneWidget);
+    expect(
+      Navigator.of(tester.element(find.byType(HomeDirectoryScreen))).canPop(),
+      false,
+    );
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
     'Register driver collects details before OTP and persists after verification',
     (tester) async {
       final auth = AuthRepository(mockMode: true);
-      UserProfile? verified;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PhoneOtpScreen(
-            repository: auth,
-            onVerified: (p) => verified = p,
-          ),
-        ),
-      );
+      await tester.pumpWidget(KolleruWheelsApp(authRepository: auth));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('register-tab')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('auth-name')), 'Ramesh');
@@ -610,12 +611,68 @@ void main() {
       await tester.ensureVisible(find.byKey(const ValueKey('verify-otp')));
       await tester.tap(find.byKey(const ValueKey('verify-otp')));
       await tester.pumpAndSettle();
-      expect(verified?.role, 'driver');
+      expect(auth.currentProfile?.role, 'driver');
+      expect(find.byType(DriverDashboardScreen), findsOneWidget);
+      expect(find.byType(DriverRegistrationScreen), findsNothing);
+      expect(find.byType(PhoneOtpScreen), findsNothing);
+      expect(find.textContaining('Registration Successful!'), findsOneWidget);
+      expect(
+        Navigator.of(tester.element(find.byType(DriverDashboardScreen)))
+            .canPop(),
+        false,
+      );
       final driver = await LocalDriverRepository().getProfile();
       expect(driver?.capacityTons, 1.5);
       expect(driver?.phone, '+919876543210');
       expect(driver?.vehicleNumber, 'AP 16 AB 1234');
+      final restored = await AuthRepository(mockMode: true).restoreSession();
+      expect(restored?.role, 'driver');
+      expect(restored?.phone, driver?.phone);
+      await tester.pumpWidget(
+        KolleruWheelsApp(
+          key: const ValueKey('restart'),
+          authRepository: AuthRepository(mockMode: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(DriverDashboardScreen), findsOneWidget);
+      expect(find.byType(DriverRegistrationScreen), findsNothing);
       await tester.pumpWidget(const SizedBox());
+    },
+  );
+  test(
+    'Register OTP defers an existing identity until coordinated completion',
+    () async {
+      final signup = AuthRepository(mockMode: true);
+      await signup.signInWithOtp(phone: '9876543210', role: 'shipper');
+      await signup.verifyOTP(phone: '9876543210', token: '123456');
+      await signup.createUserProfile(
+        phone: '9876543210',
+        name: 'Farmer',
+        role: 'shipper',
+      );
+      await signup.signOut();
+      final auth = AuthRepository(mockMode: true);
+      await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+      final existing = await auth.verifyOTP(
+        phone: '9876543210',
+        token: '123456',
+        publishSession: false,
+      );
+      expect(existing?.role, 'shipper');
+      expect(auth.currentProfile, isNull);
+      expect(await AuthRepository(mockMode: true).restoreSession(), isNull);
+      final profile = await auth.completeRegistration(
+        phone: '9876543210',
+        name: 'Farmer',
+        role: 'shipper',
+        villageId: KolleruVillages.mandals.first.villages.first.id,
+      );
+      expect(auth.currentProfile, same(profile));
+      expect(
+        (await AuthRepository(mockMode: true).restoreSession())?.phone,
+        profile.phone,
+      );
     },
   );
   testWidgets('Existing Login routes through the gated session router', (

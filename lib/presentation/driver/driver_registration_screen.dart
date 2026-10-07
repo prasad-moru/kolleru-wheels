@@ -96,14 +96,14 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       isAvailable: true,
     );
     try {
-      await widget.repository.saveProfile(profile);
       if (widget.completeUserProfile) {
         final user = await (widget.authRepository ?? AuthRepository.instance)
-            .createUserProfile(
+            .completeRegistration(
               phone: profile.phone,
               name: profile.name,
               role: 'driver',
-              villageId: _villageId,
+              villageId: _villageId!,
+              driver: profile,
             );
         if (!mounted) return;
         if (user.role != 'driver') {
@@ -117,13 +117,15 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           );
           return;
         }
+      } else {
+        await widget.repository.saveProfile(profile);
       }
       if (!mounted) return;
       if (widget.onRegistered != null) {
         widget.onRegistered!(profile);
         return;
       }
-      Navigator.of(context).pushReplacement(
+      Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(
           builder: (_) => DriverDashboardScreen(
             profile: profile,
@@ -132,6 +134,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             loadRequestRepository: widget.loadRequestRepository,
           ),
         ),
+        (_) => false,
       );
     } catch (_) {
       if (mounted) {
