@@ -18,6 +18,7 @@ class AuthRepository extends ChangeNotifier {
     SupabaseClient? client,
     bool? mockMode,
     DateTime Function()? now,
+    this.sessionTimeout = const Duration(days: 7),
   }) : _client = client ?? SupabaseConfig.client,
        isMock = mockMode ?? (client == null && !SupabaseConfig.isConfigured),
        _now = now ?? DateTime.now {
@@ -51,6 +52,8 @@ class AuthRepository extends ChangeNotifier {
   final SupabaseClient? _client;
   final bool isMock;
   final DateTime Function() _now;
+  final Duration sessionTimeout;
+  DateTime? _lastActiveWrite;
   UserProfile? _currentProfile;
   UserProfile? get currentProfile => _currentProfile;
   set currentProfile(UserProfile? value) {
@@ -73,6 +76,61 @@ class AuthRepository extends ChangeNotifier {
   static const _sessionKey = 'auth_identity_v1';
   static const _rolesKey = 'auth_roles_v1';
   static const _onboardingKey = 'auth_onboarding_v1';
+  static const activeWriteInterval = Duration(minutes: 15);
+
+  Future<bool> _expireIfInactive(Map<String, dynamic> row) async {
+    final rawTimestamp =
+        row['last_active_timestamp'] as String? ?? row['saved_at'] as String?;
+    final lastActive = rawTimestamp == null
+        ? null
+        : DateTime.tryParse(rawTimestamp)?.toUtc();
+    if (lastActive == null ||
+        _now().toUtc().difference(lastActive) <= sessionTimeout) {
+      return false;
+    }
+    await signOut();
+    return true;
+  }
+
+  /// Refreshes the persisted activity clock without writing on every tap.
+  Future<void> recordActivity() async {
+    final now = _now().toUtc();
+    if (_lastActiveWrite != null &&
+        now.difference(_lastActiveWrite!) < activeWriteInterval) {
+      return;
+    }
+    _lastActiveWrite = now;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_sessionKey);
+      if (raw == null) return;
+      final row = jsonDecode(raw) as Map<String, dynamic>;
+      if (await _expireIfInactive(row)) return;
+      row['last_active_timestamp'] = now.toIso8601String();
+      await prefs.setString(_sessionKey, jsonEncode(row));
+    } catch (_) {
+      /* Storage failure must not interrupt normal app use. */
+    }
+  }
+
+  /// Checks inactivity before a resumed session is allowed to stay open.
+  Future<bool> onAppResumed() async {
+    if (currentProfile == null) return false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_sessionKey);
+      if (raw == null) return false;
+      final row = jsonDecode(raw) as Map<String, dynamic>;
+      if (await _expireIfInactive(row)) return true;
+      final now = _now().toUtc();
+      row['last_active_timestamp'] = now.toIso8601String();
+      await prefs.setString(_sessionKey, jsonEncode(row));
+      _lastActiveWrite = now;
+    } catch (_) {
+      /* Retain the active identity if the local clock cannot be read. */
+    }
+    return false;
+  }
 
   static String normalizePhone(String phone) {
     final digits = phone.replaceAll(RegExp(r'\s'), '');
@@ -236,6 +294,7 @@ class AuthRepository extends ChangeNotifier {
     required String role,
     required String villageId,
     LocalDriverProfile? driver,
+    Uint8List? avatarBytes,
   }) async {
     final normalized = normalizePhone(phone);
     if (verifiedPhone != normalized ||
@@ -251,11 +310,17 @@ class AuthRepository extends ChangeNotifier {
       publishSession: false,
     );
     if (profile.role == 'driver' && driver != null) {
+      final driverRepository = SupabaseDriverRepository(client: _client);
+      if (avatarBytes != null && !isMock) {
+        final avatarUrl = await driverRepository.uploadDriverAvatar(
+          driverId: driver.id,
+          jpegBytes: avatarBytes,
+        );
+        driver = driver.copyWith(avatarUrl: avatarUrl);
+      }
       await LocalDriverRepository().saveProfile(driver);
       if (!isMock) {
-        await SupabaseDriverRepository.instance.upsertDriver(
-          driver.toDriverModel(),
-        );
+        await driverRepository.upsertDriver(driver.toDriverModel());
       }
     }
     await _cache(profile);
@@ -265,6 +330,7 @@ class AuthRepository extends ChangeNotifier {
 
   Future<void> _cache(UserProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
+    final activeTimestamp = _now().toUtc().toIso8601String();
     final raw = prefs.getString(_rolesKey);
     final roles = raw == null
         ? <String, dynamic>{}
@@ -277,11 +343,13 @@ class AuthRepository extends ChangeNotifier {
             ...profile.toJson(),
             'mock': isMock,
             'user_id': isMock ? null : _client?.auth.currentUser?.id,
-            'saved_at': _now().toUtc().toIso8601String(),
+            'saved_at': activeTimestamp,
+            'last_active_timestamp': activeTimestamp,
           }),
         )) {
       throw StateError('Could not save sign-in');
     }
+    _lastActiveWrite = _now().toUtc();
     await prefs.remove(_onboardingKey);
     onboardingPhone = null;
   }
@@ -318,6 +386,7 @@ class AuthRepository extends ChangeNotifier {
       }
       final row = jsonDecode(raw) as Map<String, dynamic>;
       if (row['mock'] != isMock) return currentProfile = null;
+      if (await _expireIfInactive(row)) return null;
       if (!isMock &&
           (_client?.auth.currentUser == null ||
               _client!.auth.currentUser!.id != row['user_id'])) {
@@ -341,6 +410,11 @@ class AuthRepository extends ChangeNotifier {
         } catch (_) {
           /* Cached role only restores offline UI. */
         }
+      } else {
+        final activeTimestamp = _now().toUtc().toIso8601String();
+        row['last_active_timestamp'] = activeTimestamp;
+        await prefs.setString(_sessionKey, jsonEncode(row));
+        _lastActiveWrite = _now().toUtc();
       }
       return currentProfile = profile;
     } catch (_) {
@@ -395,6 +469,7 @@ class AuthRepository extends ChangeNotifier {
     _verifiedPhone = null;
     currentProfile = null;
     _pendingPhone = null;
+    _lastActiveWrite = null;
     if (!isMock && _client != null) {
       await _client.auth.signOut(scope: SignOutScope.local);
     }

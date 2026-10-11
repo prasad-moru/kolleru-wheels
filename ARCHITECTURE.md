@@ -157,6 +157,7 @@ kolleru-wheels/
 │       ├── common/
 │       │   ├── audio_cue_button.dart
 │       │   ├── call_button.dart
+│       │   ├── driver_avatar_picker.dart
 │       │   ├── mandal_village_picker.dart
 │       │   ├── vehicle_badge.dart
 │       │   └── village_picker.dart
@@ -173,7 +174,8 @@ kolleru-wheels/
 │   └── migrations/
 │       ├── 202610060001_auth_and_telemetry.sql
 │       ├── 202610070001_profile_completion.sql
-│       └── 202610070002_commercial_gating.sql
+│       ├── 202610070002_commercial_gating.sql
+│       └── 202610110001_driver_avatars.sql
 ├── test/
 │   ├── auth_and_telemetry_test.dart
 │   ├── driver_onboarding_test.dart
@@ -258,6 +260,7 @@ These are the supplied product directory clusters, not a certified administrativ
 | --- | --- |
 | Flutter SDK; Dart `^3.13.5` | Widgets, Material UI, painting, image capture, semantics, and app lifecycle. |
 | `url_launcher: ^6.2.5` | Opens `tel:` contact URIs. |
+| `image_picker: ^1.2.4` | Selects and quality-compresses driver avatar photos before upload. |
 | `shared_preferences: ^2.2.3` | Local profile, selected village, and urgent-load JSON records. |
 | `share_plus: ^10.1.2` | `Share.shareXFiles()` native image-sharing handoff. |
 | `path_provider: ^2.1.5` | App temporary directory for exported visiting-card images. |
@@ -618,3 +621,25 @@ User-profile creation uses `upsert(..., onConflict: 'phone', ignoreDuplicates: t
 `AuthRepository.completeRegistration` coordinates verified profile creation, local driver persistence, durable cloud driver synchronization, and session publication. Identity listeners are notified only after these steps complete. The OTP gateway then clears the entire route stack with `pushAndRemoveUntil`, directly supplying the saved profile to `DriverDashboardScreen` or opening `HomeDirectoryScreen`, and displays **నమోదు విజయవంతమైంది! / Registration Successful!**. It does not route new driver registrations through `DriverModeScreen` or a second `DriverRegistrationScreen`. The legacy vehicle form remains for existing accounts missing vehicle details, and uses the same completion coordinator when creating a user profile.
 
 This is one coordinated client flow, not a PostgreSQL transaction spanning two tables and device storage. Network failures retain the driver's durable offline outbox; profile and vehicle upserts remain idempotent for retries. The persistent identity is published after vehicle storage/queueing, so UI observers do not see a partially completed registration. Regression tests cover direct driver/shipper destinations, the success message, an empty back stack, and driver session restoration without another vehicle form.
+
+## 15. Android build toolchain (9 October 2026)
+
+The Gradle wrapper is pinned to `gradle-8.10.2-all.zip`, with AGP `8.7.0`, Kotlin `2.0.20`, and Java 17. Plugin management resolves through Google Maven, Maven Central, and the Gradle Plugin Portal. The app does not explicitly set `ndkVersion`. Android may still install NDKs required by AGP or native plugins; the current `jni` dependency requests Flutter's default NDK `28.2.13676358`.
+
+The root Android build pins transitive AndroidX Browser to `1.8.0` and Core/Core KTX to `1.15.0` across projects. Browser `1.9.0` and Core `1.17.0`, requested by current Flutter plugins, fail AAR metadata validation with AGP 8.7 because they require AGP 8.9.1 or newer. Revisit these compatibility pins when upgrading the Gradle/AGP pair together.
+
+Flutter 3.47.6 rejects Gradle 8.10.2 in its minimum-version preflight check. Builds with that Flutter version therefore require `--android-skip-build-dependency-validation` alongside the release command and Supabase defines in Section 11. This bypasses Flutter's preflight check; Gradle compilation and Android dependency metadata checks still run. The exact release command without this flag fails before compilation on Flutter 3.47.6.
+
+The release build type currently uses the debug signing configuration. A release-mode APK produced by this configuration still needs a securely configured production signing key before production distribution, as required in Section 10.
+
+Verification on 9 October 2026: `dart fix --apply lib` reported nothing to fix, `flutter analyze` reported zero issues, and all 66 Flutter tests passed. After `flutter clean` and dependency resolution, the release build with the compatibility flag succeeded using Flutter 3.47.6, Java 17, and an isolated Linux SDK/source copy to avoid Windows executable and filesystem limitations. The source copy was checked against the workspace before copying the APK back. The generated `build/app/outputs/flutter-apk/app-release.apk` is 55,638,866 bytes and includes the supplied production Supabase URL and publishable key for all three bundled ABIs. This confirms compilation, not live Supabase authorization or physical-device acceptance.
+
+## 16. Driver card presentation, avatars, and session activity (11 October 2026)
+
+The shared Material 3 theme uses system fonts with regular/medium weights, compact letter spacing, 16 dp card corners, 2 dp elevation, and a subtle outline. This preserves Telugu system-font fallback and avoids a downloaded font dependency. Driver visiting cards show an avatar or initials fallback, verified-phone mark when the cloud profile confirms the phone, vehicle/capacity, cargo specializations, and direct Call and WhatsApp actions. Call still goes through `CallButton`, so the existing non-blocking call-intent telemetry remains attached to that action.
+
+`image_picker` selects a gallery image and constrains it to a 1024-pixel maximum dimension at JPEG quality 78 before upload. Authenticated registration and the driver's own card upload to the `driver-avatars` Supabase Storage bucket; the driver row carries the public `avatar_url`. Uploads are limited to 5 MB and stored under the authenticated user ID. Local profiles cache the URL for offline display. A failed upload leaves registration retryable. Apply `supabase/migrations/202610110001_driver_avatars.sql` after the commercial gating migration to add the column and bucket policies; this migration is supplied locally and has not been deployed. Devices need storage connectivity to select, upload, or refresh remote photos; cards retain the local fallback when no image is available.
+
+`AuthRepository` records `last_active_timestamp` with the cached identity, refreshes it on app resume and at most once every 15 minutes during pointer interaction, and expires sessions after an injectable seven-day inactivity interval. Expiration uses the device clock, removes the app identity, signs out the Supabase SDK session, and `SessionRouter` returns to the existing Login/Register gateway. Valid sessions continue without a daily OTP. This is a client-side inactivity policy, not server-side session revocation or an authoritative security boundary.
+
+Verification adds coverage for the seven-day expiry and activity refresh and for avatar URL serialization through the driver cloud schema. `image_picker` is the only new runtime dependency for this increment.

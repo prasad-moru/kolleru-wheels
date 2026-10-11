@@ -3,6 +3,16 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    configurations.configureEach {
+        resolutionStrategy.force(
+            // Keep plugin transitives compatible with AGP 8.7 / Gradle 8.10.2.
+            // Browser 1.9 and Core 1.17 require AGP 8.9.1 or newer.
+            "androidx.browser:browser:1.8.0",
+            "androidx.core:core:1.15.0",
+            "androidx.core:core-ktx:1.15.0",
+        )
+    }
 }
 
 val newBuildDir: Directory =

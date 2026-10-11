@@ -31,6 +31,8 @@ DriverModel driver() => DriverModel(
   vehicleNumber: 'AP 39 AB 1234',
   specializations: const ['Iron rods'],
   isAvailable: true,
+  avatarUrl: 'https://example.supabase.co/storage/v1/object/public/driver-avatars/avatar.jpg',
+  isPhoneVerified: true,
 );
 LoadRequestModel load({DateTime? createdAt, bool closed = false}) =>
     LoadRequestModel(
@@ -99,6 +101,7 @@ void main() {
           'vehicle_number',
           'specializations',
           'is_available',
+          'avatar_url',
           'updated_at',
         ]),
       );
@@ -107,6 +110,8 @@ void main() {
       expect(restored.capacityTons, 1.5);
       expect(restored.currentSpotVillageId, 'kaikaluru-town');
       expect(restored.specializations, ['Iron rods']);
+      expect(restored.avatarUrl, driver().avatarUrl);
+      expect(restored.isPhoneVerified, isTrue);
       expect(
         OfflineTableStore.cloudId('drivers', 'local-123'),
         OfflineTableStore.cloudId('drivers', 'local-123'),

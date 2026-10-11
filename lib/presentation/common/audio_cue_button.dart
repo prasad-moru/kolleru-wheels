@@ -8,9 +8,22 @@ class AudioCueButton extends StatelessWidget {
   const AudioCueButton({super.key, this.message = AppStrings.audioHint});
   final String message;
   @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    icon: const Icon(Icons.volume_up),
-    label: const Text(AppStrings.audio),
+  Widget build(BuildContext context) => OutlinedButton(
+    child: const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.volume_up),
+        SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            AppStrings.audio,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    ),
     onPressed: () {
       if (MediaQuery.supportsAnnounceOf(context)) {
         SemanticsService.sendAnnouncement(

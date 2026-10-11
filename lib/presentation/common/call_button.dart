@@ -19,6 +19,7 @@ class CallButton extends StatefulWidget {
     this.callerRole,
     this.telemetryRepository,
     this.launcher,
+    this.compact = false,
   });
   final String phone;
   final bool isDemo;
@@ -28,6 +29,7 @@ class CallButton extends StatefulWidget {
   final String? callerRole;
   final TelemetryRepository? telemetryRepository;
   final Future<bool> Function(Uri)? launcher;
+  final bool compact;
   @override
   State<CallButton> createState() => _CallButtonState();
 }
@@ -71,11 +73,12 @@ class _CallButtonState extends State<CallButton> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      FilledButton.icon(
+      FilledButton(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.green,
           foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(64),
+          minimumSize: Size.fromHeight(widget.compact ? 58 : 64),
+          padding: EdgeInsets.symmetric(horizontal: widget.compact ? 10 : 20),
         ),
         onPressed: _launching
             ? null
@@ -86,10 +89,23 @@ class _CallButtonState extends State<CallButton> {
                 );
               }
             : _call,
-        icon: const Icon(Icons.call, size: 28),
-        label: Text(widget.label),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.call, size: 24),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                widget.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
       ),
-      if (widget.isDemo) const Text(AppStrings.demoCall),
+      if (widget.isDemo && !widget.compact) const Text(AppStrings.demoCall),
     ],
   );
 }

@@ -16,6 +16,8 @@ class LocalDriverProfile {
     required this.vehicleNumber,
     required this.isAvailable,
     String? currentSpotLabel,
+    this.avatarUrl,
+    this.isPhoneVerified = false,
   }) : specializations = List.unmodifiable(specializations),
        currentSpotLabel = currentSpotLabel ?? currentSpotVillage.label;
 
@@ -30,11 +32,15 @@ class LocalDriverProfile {
   final List<String> specializations;
   final String vehicleNumber;
   final bool isAvailable;
+  final String? avatarUrl;
+  final bool isPhoneVerified;
 
   LocalDriverProfile copyWith({
     bool? isAvailable,
     Village? currentSpotVillage,
     String? currentSpotLabel,
+    String? avatarUrl,
+    bool? isPhoneVerified,
   }) => LocalDriverProfile(
     id: id,
     name: name,
@@ -51,6 +57,8 @@ class LocalDriverProfile {
     specializations: specializations,
     vehicleNumber: vehicleNumber,
     isAvailable: isAvailable ?? this.isAvailable,
+    avatarUrl: avatarUrl ?? this.avatarUrl,
+    isPhoneVerified: isPhoneVerified ?? this.isPhoneVerified,
   );
 
   DriverModel toDriverModel() => DriverModel(
@@ -66,9 +74,11 @@ class LocalDriverProfile {
     isAvailable: isAvailable,
     vehicleNumber: vehicleNumber,
     specializations: specializations,
+    avatarUrl: avatarUrl,
+    isPhoneVerified: isPhoneVerified,
   );
 
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
     'schemaVersion': 1,
     'id': id,
     'name': name,
@@ -81,6 +91,8 @@ class LocalDriverProfile {
     'specializations': specializations,
     'vehicleNumber': vehicleNumber,
     'isAvailable': isAvailable,
+    'avatarUrl': avatarUrl,
+    'isPhoneVerified': isPhoneVerified,
   };
 
   factory LocalDriverProfile.fromJson(Map<String, dynamic> json) {
@@ -107,6 +119,8 @@ class LocalDriverProfile {
       specializations: (json['specializations'] as List).cast<String>(),
       vehicleNumber: json['vehicleNumber'] as String,
       isAvailable: json['isAvailable'] as bool,
+      avatarUrl: json['avatarUrl'] as String?,
+      isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
     );
     if (profile.id.isEmpty ||
         profile.name.trim().isEmpty ||

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/repositories/auth_repository.dart';
@@ -11,16 +13,23 @@ class SessionRouter extends StatefulWidget {
   State<SessionRouter> createState() => _SessionRouterState();
 }
 
-class _SessionRouterState extends State<SessionRouter> {
+class _SessionRouterState extends State<SessionRouter>
+    with WidgetsBindingObserver {
   late final _auth = widget.repository ?? AuthRepository.instance;
   bool _restoring = false;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _auth.addListener(_changed);
     if (_auth.currentProfile == null && _auth.onboardingPhone == null) {
       _restore();
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_auth.onAppResumed());
   }
 
   Future<void> _restore() async {
@@ -35,6 +44,7 @@ class _SessionRouterState extends State<SessionRouter> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _auth.removeListener(_changed);
     super.dispose();
   }
@@ -45,9 +55,13 @@ class _SessionRouterState extends State<SessionRouter> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final profile = _auth.currentProfile;
-    if (profile != null) {
-      return RoleDestination(profile: profile, authRepository: _auth);
-    }
-    return PhoneOtpScreen(repository: _auth, onVerified: (_) => _changed());
+    final destination = profile != null
+        ? RoleDestination(profile: profile, authRepository: _auth)
+        : PhoneOtpScreen(repository: _auth, onVerified: (_) => _changed());
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => unawaited(_auth.recordActivity()),
+      child: destination,
+    );
   }
 }

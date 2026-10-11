@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -11,6 +13,7 @@ import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
+import '../common/driver_avatar_picker.dart';
 import '../common/mandal_village_picker.dart';
 import '../auth/role_destination.dart';
 import 'driver_dashboard_screen.dart';
@@ -47,6 +50,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   final _number = TextEditingController();
   final _capacity = TextEditingController();
   final _specializations = <String>{};
+  Uint8List? _avatarBytes;
   VehicleType _vehicle = VehicleType.boleroPickup;
   String? _villageId;
   bool _saving = false;
@@ -83,7 +87,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
     final village = KolleruVillages.find(_villageId)!;
-    final profile = LocalDriverProfile(
+    var profile = LocalDriverProfile(
       id: _driverId,
       name: _name.text.trim(),
       phone: '+91${_mobileDigits(_phone.text)}',
@@ -94,6 +98,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       specializations: _specializations.toList(),
       vehicleNumber: _number.text.trim().toUpperCase(),
       isAvailable: true,
+      isPhoneVerified: widget.verifiedPhone != null,
     );
     try {
       if (widget.completeUserProfile) {
@@ -104,7 +109,9 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               role: 'driver',
               villageId: _villageId!,
               driver: profile,
+              avatarBytes: _avatarBytes,
             );
+        profile = await widget.repository.getProfile() ?? profile;
         if (!mounted) return;
         if (user.role != 'driver') {
           Navigator.of(context).pushReplacement(
@@ -159,6 +166,15 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(AppStrings.localProfileNote),
+                const SizedBox(height: 20),
+                Center(
+                  child: DriverAvatarPicker(
+                    name: _name.text,
+                    initialBytes: _avatarBytes,
+                    onPhotoSelected: (bytes) =>
+                        setState(() => _avatarBytes = bytes),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 TextFormField(
                   key: const ValueKey('driver-name'),

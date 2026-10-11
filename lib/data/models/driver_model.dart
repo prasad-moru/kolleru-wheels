@@ -16,6 +16,8 @@ class DriverModel {
     this.specializations = const [],
     this.currentSpotVillageId,
     this.capacityTons,
+    this.avatarUrl,
+    this.isPhoneVerified = false,
   });
   final String id;
   final String name;
@@ -30,4 +32,6 @@ class DriverModel {
   final List<String> specializations;
   final String? currentSpotVillageId;
   final double? capacityTons;
+  final String? avatarUrl;
+  final bool isPhoneVerified;
 }

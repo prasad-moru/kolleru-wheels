@@ -368,6 +368,32 @@ void main() {
     await restarted.signOut();
     expect(await restarted.restoreSession(), isNull);
   });
+  test(
+    'Seven days of inactivity expires the session; active restore refreshes it',
+    () async {
+      var now = DateTime.utc(2026, 10, 6, 10);
+      final auth = AuthRepository(mockMode: true, now: () => now);
+      await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+      await auth.verifyOTP(phone: '9876543210', token: '123456');
+      await auth.createUserProfile(
+        phone: '9876543210',
+        name: 'Farmer',
+        role: 'shipper',
+      );
+
+      now = now.add(const Duration(days: 6, hours: 23));
+      final restored = AuthRepository(mockMode: true, now: () => now);
+      expect((await restored.restoreSession())?.role, 'shipper');
+
+      now = now.add(const Duration(days: 7, minutes: 1));
+      final expired = AuthRepository(mockMode: true, now: () => now);
+      expect(await expired.restoreSession(), isNull);
+      expect(
+        (await SharedPreferences.getInstance()).getString('auth_identity_v1'),
+        isNull,
+      );
+    },
+  );
   test('Public onboarding cannot select admin, resend early, or replay expired OTP', () async {
     var now = DateTime.utc(2026, 10, 6);
     final auth = AuthRepository(mockMode: true, now: () => now);

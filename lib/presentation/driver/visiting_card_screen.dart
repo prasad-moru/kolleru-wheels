@@ -1,18 +1,23 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../data/models/driver_model.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/local_driver_repository.dart';
+import '../../data/repositories/supabase_driver_repository.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
-import '../common/vehicle_badge.dart';
+import '../common/driver_avatar_picker.dart';
 
 class VisitingCardScreen extends StatefulWidget {
   const VisitingCardScreen({super.key, required this.driver});
@@ -25,6 +30,107 @@ class VisitingCardScreen extends StatefulWidget {
 class _VisitingCardScreenState extends State<VisitingCardScreen> {
   final _cardKey = GlobalKey();
   bool _sharing = false;
+  bool _savingAvatar = false;
+  late DriverModel _driver = widget.driver;
+  Uint8List? _avatarBytes;
+  late final _auth = AuthRepository.instance;
+  late final _driverRepository = SupabaseDriverRepository.instance;
+
+  bool get _canEditAvatar =>
+      !_driver.isDemo &&
+      _auth.currentProfile?.role == 'driver' &&
+      _auth.currentProfile?.phone == _driver.phone;
+
+  Future<void> _saveAvatar(Uint8List bytes) async {
+    if (_savingAvatar || !_canEditAvatar) return;
+    setState(() {
+      _savingAvatar = true;
+      _avatarBytes = bytes;
+    });
+    try {
+      final url = await _driverRepository.uploadDriverAvatar(
+        driverId: _driver.id,
+        jpegBytes: bytes,
+      );
+      final updated = _driverWithAvatar(_driver, url);
+      final local = await LocalDriverRepository().getProfile();
+      if (local == null ||
+          local.id != updated.id ||
+          local.phone != updated.phone) {
+        throw StateError('Driver profile is not available on this device');
+      }
+      await LocalDriverRepository().updateProfile(
+        local.copyWith(avatarUrl: url),
+      );
+      await _driverRepository.upsertDriver(updated);
+      if (mounted) {
+        setState(() {
+          _driver = updated;
+          _avatarBytes = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ఫోటో నవీకరించబడింది / Photo updated')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _avatarBytes = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ఫోటో సేవ్ కాలేదు / Could not save photo'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingAvatar = false);
+    }
+  }
+
+  DriverModel _driverWithAvatar(DriverModel driver, String url) => DriverModel(
+    id: driver.id,
+    name: driver.name,
+    phone: driver.phone,
+    village: driver.village,
+    currentSpot: driver.currentSpot,
+    vehicleType: driver.vehicleType,
+    capacity: driver.capacity,
+    isAvailable: driver.isAvailable,
+    isDemo: driver.isDemo,
+    vehicleNumber: driver.vehicleNumber,
+    specializations: driver.specializations,
+    currentSpotVillageId: driver.currentSpotVillageId,
+    capacityTons: driver.capacityTons,
+    avatarUrl: url,
+    isPhoneVerified: driver.isPhoneVerified,
+  );
+
+  Future<void> _openWhatsApp() async {
+    if (_driver.isDemo) return;
+    final digits = _driver.phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final phone = digits.startsWith('91') ? digits : '91$digits';
+    final text = Uri.encodeComponent(
+      'నమస్కారం ${_driver.name}, Kolleru Wheels ద్వారా సంప్రదిస్తున్నాను.',
+    );
+    final uri = Uri.parse('https://wa.me/$phone?text=$text');
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _shareCard(BuildContext buttonContext) async {
     if (_sharing) return;
@@ -94,7 +200,7 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final driver = widget.driver;
+    final driver = _driver;
     return Scaffold(
       appBar: AppBar(title: const Text(AppStrings.visitingCard)),
       body: SafeArea(
@@ -108,15 +214,83 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                 child: TransportVisitingCard(driver: driver),
               ),
               const SizedBox(height: 20),
-              CallButton(
-                phone: driver.phone,
-                contextNote: 'visiting_card:${driver.id}',
-                isDemo: driver.isDemo,
-                label: AppStrings.callNow,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final callAction = CallButton(
+                    phone: driver.phone,
+                    contextNote: 'visiting_card:${driver.id}',
+                    isDemo: driver.isDemo,
+                    label: 'కాల్ / Call',
+                    compact: true,
+                  );
+                  final whatsappAction = OutlinedButton(
+                    key: const ValueKey('whatsapp-driver'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(58),
+                      foregroundColor: const Color(0xFF187A52),
+                      side: const BorderSide(color: Color(0x33187A52)),
+                    ),
+                    onPressed: driver.isDemo ? null : _openWhatsApp,
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline, size: 20),
+                        SizedBox(width: 7),
+                        Flexible(
+                          child: Text(
+                            'వాట్సాప్ / WhatsApp',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (constraints.maxWidth < 430) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        callAction,
+                        const SizedBox(height: 10),
+                        whatsappAction,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: callAction),
+                      const SizedBox(width: 10),
+                      Expanded(child: whatsappAction),
+                    ],
+                  );
+                },
               ),
+              if (_canEditAvatar) ...[
+                const SizedBox(height: 14),
+                Center(
+                  child: DriverAvatarPicker(
+                    name: driver.name,
+                    imageUrl: driver.avatarUrl,
+                    initialBytes: _avatarBytes,
+                    size: 56,
+                    editable: !_savingAvatar,
+                    onPhotoSelected: _saveAvatar,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _savingAvatar
+                      ? 'ఫోటో సేవ్ అవుతోంది / Saving photo…'
+                      : 'ప్రొఫైల్ ఫోటో మార్చండి / Change profile photo',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
               const SizedBox(height: 12),
               Builder(
-                builder: (buttonContext) => FilledButton.icon(
+                builder: (buttonContext) => FilledButton(
                   key: const ValueKey('share-visiting-card'),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.green,
@@ -124,15 +298,28 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                     minimumSize: const Size.fromHeight(64),
                   ),
                   onPressed: _sharing ? null : () => _shareCard(buttonContext),
-                  icon: _sharing
-                      ? const SizedBox.square(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_sharing)
+                        const SizedBox.square(
                           dimension: 24,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.share, size: 28),
-                  label: Text(
-                    _sharing ? AppStrings.sharing : AppStrings.shareStatus,
-                    textAlign: TextAlign.center,
+                      else
+                        const Icon(Icons.share, size: 28),
+                      const SizedBox(width: 9),
+                      Flexible(
+                        child: Text(
+                          _sharing
+                              ? AppStrings.sharing
+                              : AppStrings.shareStatus,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -158,132 +345,219 @@ class TransportVisitingCard extends StatelessWidget {
 
   Widget _badge(String text, {Color color = const Color(0xFFE8F4EB)}) =>
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.charcoal, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0x1A19332C)),
         ),
         child: Text(
           text,
           style: const TextStyle(
             color: AppColors.charcoal,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.1,
           ),
         ),
       );
 
+  Color _specializationColor(String label) {
+    final value = label.toLowerCase();
+    if (value.contains('fish') || value.contains('చేప')) {
+      return const Color(0xFFEAF4FA);
+    }
+    if (value.contains('paddy') || value.contains('వరి')) {
+      return const Color(0xFFEDF5E9);
+    }
+    if (value.contains('cement') || value.contains('సిమెంట్')) {
+      return const Color(0xFFF7F0E7);
+    }
+    return const Color(0xFFF1F5F2);
+  }
+
+  String get _capacityLabel => driver.capacityTons == null
+      ? driver.capacity
+      : '${driver.capacityTons!.toStringAsFixed(driver.capacityTons! % 1 == 0 ? 0 : 1)} టన్నులు / Tons';
+
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.charcoal, width: 3),
-    ),
+  Widget build(BuildContext context) => Card(
     child: ClipRRect(
-      borderRadius: BorderRadius.circular(13),
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
-            color: AppColors.green,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            color: const Color(0xFFF2F7F4),
+            child: Row(
               children: [
-                const Icon(Icons.route, color: AppColors.amber, size: 36),
-                const SizedBox(height: 8),
-                Text(
-                  AppStrings.cardHeader,
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(color: Colors.white),
+                const Icon(
+                  Icons.route_rounded,
+                  color: AppColors.green,
+                  size: 21,
                 ),
-                const Text(
-                  AppStrings.cardSubtitle,
-                  style: TextStyle(color: Colors.white),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    AppStrings.cardHeader,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: driver.isAvailable
+                          ? const Color(0xFFE3F2EA)
+                          : const Color(0xFFFFF3DC),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      driver.isAvailable
+                          ? AppStrings.cardAvailable
+                          : AppStrings.busy,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: driver.isAvailable
+                            ? const Color(0xFF176744)
+                            : const Color(0xFF8A5A0A),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          Container(height: 6, color: AppColors.amber),
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                VehicleBadge(type: driver.vehicleType, size: 120),
-                const SizedBox(height: 16),
-                Text(
-                  driver.name,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    height: 1.4,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 14),
+                      child: DriverAvatarPicker(
+                        name: driver.name,
+                        imageUrl: driver.avatarUrl,
+                        editable: false,
+                        size: 74,
+                      ),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  driver.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall,
+                                ),
+                              ),
+                              if (driver.isPhoneVerified) ...[
+                                const SizedBox(width: 5),
+                                const Tooltip(
+                                  message: 'Verified phone',
+                                  child: Icon(
+                                    Icons.verified,
+                                    color: Color(0xFF147A58),
+                                    size: 21,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          _badge(
+                            driver.vehicleType.label,
+                            color: const Color(0xFFF1F5F2),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _capacityLabel,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: const Color(0xFF176744)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
-                  runSpacing: 10,
+                  runSpacing: 8,
                   children: [
                     _badge(
-                      driver.vehicleType.label,
-                      color: const Color(0xFFFFF1BF),
-                    ),
-                    _badge(
                       '${AppStrings.vehicleNumber}: ${driver.vehicleNumber.isEmpty ? AppStrings.numberPending : driver.vehicleNumber}',
+                      color: const Color(0xFFF1F5F2),
                     ),
-                    _badge('${AppStrings.capacity}: ${driver.capacity}'),
                     for (final tag in driver.specializations)
-                      _badge(tag, color: const Color(0xFFFFF1BF)),
+                      _badge(tag, color: _specializationColor(tag)),
                   ],
                 ),
-                const Divider(height: 32, color: AppColors.charcoal),
-                Text(
-                  driver.village.label,
-                  style: Theme.of(context).textTheme.titleLarge,
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  child: Divider(height: 1),
                 ),
-                Text('${AppStrings.currentSpot}: ${driver.currentSpot}'),
-                const SizedBox(height: 16),
-                _badge(
-                  driver.isAvailable
-                      ? AppStrings.cardAvailable
-                      : AppStrings.busy,
-                  color: driver.isAvailable
-                      ? const Color(0xFFDFF4E8)
-                      : AppColors.amber,
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 18,
+                      color: Color(0xFF64736D),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        '${driver.village.label} · ${driver.currentSpot}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
                 ),
                 if (driver.isDemo) ...[
                   const SizedBox(height: 12),
-                  const Text(
+                  Text(
                     AppStrings.demo,
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ],
               ],
             ),
           ),
           Container(
-            color: AppColors.charcoal,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            color: const Color(0xFF19332C),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+            child: Row(
               children: [
-                const Text(
-                  AppStrings.callNow,
-                  style: TextStyle(
-                    color: AppColors.amber,
-                    fontWeight: FontWeight.bold,
-                  ),
+                const Icon(
+                  Icons.call_outlined,
+                  color: Color(0xFFA9DFC5),
+                  size: 19,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  driver.phone,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    driver.phone,
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(color: Colors.white, letterSpacing: 0.1),
                   ),
                 ),
               ],

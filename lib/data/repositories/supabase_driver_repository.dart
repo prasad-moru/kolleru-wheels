@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/supabase_config.dart';
@@ -54,6 +56,7 @@ class SupabaseDriverRepository {
       'vehicle_number': driver.vehicleNumber,
       'specializations': driver.specializations,
       'is_available': driver.isAvailable,
+      'avatar_url': driver.avatarUrl,
       'updated_at': now.toUtc().toIso8601String(),
     };
   }
@@ -83,6 +86,8 @@ class SupabaseDriverRepository {
       vehicleNumber: row['vehicle_number'] as String,
       specializations: (row['specializations'] as List? ?? []).cast<String>(),
       isAvailable: row['is_available'] as bool,
+      avatarUrl: row['avatar_url'] as String?,
+      isPhoneVerified: true,
     );
   }
 
@@ -115,6 +120,37 @@ class SupabaseDriverRepository {
     await _store.put(_store.cacheKey, row);
     await _flush();
   });
+
+  /// Uploads a picker-compressed JPEG into the signed-in driver's own folder.
+  /// The bucket must be provisioned by the driver avatar migration.
+  Future<String> uploadDriverAvatar({
+    required String driverId,
+    required Uint8List jpegBytes,
+  }) async {
+    final client = _client;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) {
+      throw StateError('Sign in to update your driver photo');
+    }
+    if (jpegBytes.isEmpty || jpegBytes.lengthInBytes > 5 * 1024 * 1024) {
+      throw const FormatException('Driver photo must be under 5 MB');
+    }
+    final path = '${user.id}/$driverId.jpg';
+    await client.storage
+        .from('driver-avatars')
+        .uploadBinary(
+          path,
+          jpegBytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            cacheControl: '3600',
+            upsert: true,
+          ),
+        )
+        .timeout(const Duration(seconds: 30));
+    return client.storage.from('driver-avatars').getPublicUrl(path);
+  }
+
   Future<List<DriverModel>> getAvailableDrivers() => _queue.run(() async {
     await _flush();
     var rows = await _store.read(_store.cacheKey);

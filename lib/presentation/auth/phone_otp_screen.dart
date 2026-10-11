@@ -1,3 +1,4 @@
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../common/mandal_village_picker.dart';
+import '../common/driver_avatar_picker.dart';
 import '../driver/driver_dashboard_screen.dart';
 import '../farmer/home_directory_screen.dart';
 import 'role_destination.dart';
@@ -30,6 +32,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
   final _name = TextEditingController();
   final _number = TextEditingController();
   final _capacity = TextEditingController();
+  Uint8List? _avatarBytes;
   final _form = GlobalKey<FormState>();
   final _driverId = const Uuid().v4();
   String _role = 'shipper';
@@ -124,6 +127,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
           specializations: const [],
           vehicleNumber: _number.text.trim().toUpperCase(),
           isAvailable: true,
+          isPhoneVerified: true,
         );
       }
       final profile = await _auth.completeRegistration(
@@ -132,6 +136,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
         role: _role,
         villageId: _villageId!,
         driver: driver,
+        avatarBytes: _avatarBytes,
       );
       if (!mounted) return;
       _timer?.cancel();
@@ -338,6 +343,15 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                           onChanged: (id) => setState(() => _villageId = id),
                         ),
                         if (_role == 'driver') ...[
+                          const SizedBox(height: 20),
+                          Center(
+                            child: DriverAvatarPicker(
+                              name: _name.text,
+                              initialBytes: _avatarBytes,
+                              onPhotoSelected: (bytes) =>
+                                  setState(() => _avatarBytes = bytes),
+                            ),
+                          ),
                           const SizedBox(height: 16),
                           DropdownButtonFormField<VehicleType>(
                             key: const ValueKey('auth-vehicle'),
