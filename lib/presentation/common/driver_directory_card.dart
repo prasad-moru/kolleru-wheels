@@ -16,12 +16,14 @@ class DriverDirectoryCard extends StatelessWidget {
     required this.onOpen,
     required this.onWhatsApp,
     this.callerPhone,
+    this.callerRole = 'shipper',
   });
 
   final DriverModel driver;
   final VoidCallback onOpen;
   final VoidCallback onWhatsApp;
   final String? callerPhone;
+  final String callerRole;
 
   static const _ink = Color(0xFF0F172A);
   static const _slate = Color(0xFF475569);
@@ -278,7 +280,7 @@ class DriverDirectoryCard extends StatelessWidget {
                       backgroundColor: const Color(0xFF059669),
                       elevated: true,
                       callerPhone: callerPhone,
-                      callerRole: 'shipper',
+                      callerRole: callerRole,
                       contextNote: 'directory:${driver.id}',
                     );
                     final whatsapp = OutlinedButton(

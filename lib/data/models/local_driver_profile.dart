@@ -37,6 +37,28 @@ class LocalDriverProfile {
   final String? avatarUrl;
   final bool isPhoneVerified;
 
+  factory LocalDriverProfile.fromDriverModel(DriverModel driver) {
+    final spot =
+        KolleruVillages.find(driver.currentSpotVillageId) ?? driver.village;
+    final profile = LocalDriverProfile(
+      id: driver.id,
+      name: driver.name,
+      phone: driver.phone,
+      baseVillage: driver.village,
+      currentSpotVillage: spot,
+      currentSpotLabel: driver.currentSpot,
+      vehicleType: driver.vehicleType,
+      capacityTons: driver.capacityTons!,
+      specializations: driver.specializations,
+      vehicleNumber: driver.vehicleNumber,
+      isAvailable: driver.isAvailable,
+      avatarUrl: driver.avatarUrl,
+      isPhoneVerified: driver.isPhoneVerified,
+      cardStyle: driver.cardStyle,
+    );
+    return LocalDriverProfile.fromJson(profile.toJson());
+  }
+
   LocalDriverProfile copyWith({
     String? cardStyle,
     bool? isAvailable,

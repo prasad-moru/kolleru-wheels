@@ -62,7 +62,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     _auth.addListener(_identityChanged);
     _remoteDrivers =
         widget.remoteDriverRepository ?? SupabaseDriverRepository.instance;
-    if (_auth.currentProfile?.role != 'shipper') return;
+    if (_auth.currentProfile?.role != 'shipper' && !_auth.isGuest) return;
     if (widget.repository == null || widget.remoteDriverRepository != null) {
       _fetchDrivers();
     }
@@ -108,7 +108,19 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     );
   }
 
+  void _openSignIn() {
+    _auth.endGuestMode();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => SessionRouter(repository: _auth)),
+      (_) => false,
+    );
+  }
+
   Future<void> _myLoads() async {
+    if (_auth.currentProfile?.role != 'shipper') {
+      _openSignIn();
+      return;
+    }
     final phone = _auth.currentProfile!.phone;
     final repository =
         widget.loadRequestRepository ?? LoadRequestRepository.instance;
@@ -154,6 +166,10 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   }
 
   Future<void> _postLoad() async {
+    if (_auth.currentProfile?.role != 'shipper') {
+      _openSignIn();
+      return;
+    }
     final posted = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -290,7 +306,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_auth.currentProfile?.role != 'shipper') {
+    if (_auth.currentProfile?.role != 'shipper' && !_auth.isGuest) {
       return SessionRouter(repository: _auth);
     }
     final drivers = [
@@ -349,30 +365,42 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         child: SafeArea(
           child: ListView(
             children: [
-              ListTile(
-                key: const ValueKey('farmer-profile'),
-                leading: const Icon(Icons.person),
-                title: Text(_auth.currentProfile!.name),
-                subtitle: Text(_auth.currentProfile!.phone),
-              ),
-              ListTile(
-                key: const ValueKey('my-posted-loads'),
-                leading: const Icon(Icons.inventory),
-                title: const Text('My Posted Loads'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _myLoads();
-                },
-              ),
-              ListTile(
-                key: const ValueKey('drawer-logout'),
-                leading: const Icon(Icons.logout),
-                title: const Text('Logout'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _logout();
-                },
-              ),
+              if (_auth.isGuest)
+                ListTile(
+                  key: const ValueKey('guest-sign-in'),
+                  leading: const Icon(Icons.login),
+                  title: const Text(AppStrings.signIn),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _openSignIn();
+                  },
+                )
+              else ...[
+                ListTile(
+                  key: const ValueKey('farmer-profile'),
+                  leading: const Icon(Icons.person),
+                  title: Text(_auth.currentProfile!.name),
+                  subtitle: Text(_auth.currentProfile!.phone),
+                ),
+                ListTile(
+                  key: const ValueKey('my-posted-loads'),
+                  leading: const Icon(Icons.inventory),
+                  title: const Text('My Posted Loads'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _myLoads();
+                  },
+                ),
+                ListTile(
+                  key: const ValueKey('drawer-logout'),
+                  leading: const Icon(Icons.logout),
+                  title: const Text('Logout'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _logout();
+                  },
+                ),
+              ],
             ],
           ),
         ),
@@ -414,8 +442,8 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                     key: const ValueKey('post-urgent-load'),
                     onPressed: _postLoad,
                     icon: const Icon(Icons.campaign, size: 28),
-                    label: const Text(
-                      AppStrings.urgentLoad,
+                    label: Text(
+                      _auth.isGuest ? AppStrings.signInToPost : AppStrings.urgentLoad,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -551,6 +579,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
                           key: ValueKey('directory-driver-${driver.id}'),
                           driver: driver,
                           callerPhone: _auth.currentProfile?.phone,
+                          callerRole: _auth.isGuest ? 'guest' : 'shipper',
                           onOpen: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => VisitingCardScreen(driver: driver),

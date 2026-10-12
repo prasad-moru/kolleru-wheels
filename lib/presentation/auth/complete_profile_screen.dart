@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_strings.dart';
 import '../../data/models/user_profile_model.dart';
+import 'onboarding_navigation.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../driver/driver_registration_screen.dart';
@@ -86,67 +88,90 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     super.dispose();
   }
 
+  Future<void> _leave() async {
+    if (_saving) return;
+    await leaveOnboarding(context, _auth);
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('నమోదు / Complete Profile')),
-    body: SafeArea(
-      child: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text('నిర్ధారించిన ఫోన్ / Verified phone: ${widget.phone}'),
-            const SizedBox(height: 20),
-            TextFormField(
-              key: const ValueKey('complete-name'),
-              controller: _name,
-              enabled: !_saving,
-              autofillHints: const [AutofillHints.name],
-              decoration: const InputDecoration(labelText: 'పేరు / Full name'),
-              validator: (value) =>
-                  (value?.trim().length ?? 0) < 2 ||
-                      (value?.trim().length ?? 0) > 80
-                  ? 'పేరు ఇవ్వండి / Enter a name (2–80 characters)'
-                  : null,
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                ChoiceChip(
-                  key: const ValueKey('complete-shipper'),
-                  label: const Text('రైతు / వ్యాపారి (Farmer / Shipper)'),
-                  selected: _role == 'shipper',
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _role = 'shipper'),
-                ),
-                ChoiceChip(
-                  key: const ValueKey('complete-driver'),
-                  label: const Text('డ్రైవర్ (Driver)'),
-                  selected: _role == 'driver',
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _role = 'driver'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            MandalVillagePicker(onChanged: (id) => _villageId = id),
-            const SizedBox(height: 24),
-            FilledButton(
-              key: const ValueKey('complete-profile'),
-              onPressed: _saving ? null : _complete,
-              child: Text(
-                _role == 'driver'
-                    ? 'వాహనం వివరాలు / Continue to vehicle details'
-                    : 'నమోదు చేయండి / Complete registration',
+  Widget build(BuildContext context) => OnboardingBackScope(
+    enabled: !_saving,
+    onExit: _leave,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('నమోదు / Complete Profile'),
+        leading: IconButton(
+          key: const ValueKey('onboarding-back'),
+          tooltip: AppStrings.cancelRegistration,
+          onPressed: _saving ? null : _leave,
+          icon: const Icon(Icons.arrow_back),
+        ),
+      ),
+      body: SafeArea(
+        child: Form(
+          key: _form,
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('నిర్ధారించిన ఫోన్ / Verified phone: ${widget.phone}'),
+              const SizedBox(height: 20),
+              TextFormField(
+                key: const ValueKey('complete-name'),
+                controller: _name,
+                enabled: !_saving,
+                autofillHints: const [AutofillHints.name],
+                decoration: const InputDecoration(labelText: 'పేరు / Full name'),
+                validator: (value) =>
+                    (value?.trim().length ?? 0) < 2 ||
+                        (value?.trim().length ?? 0) > 80
+                    ? 'పేరు ఇవ్వండి / Enter a name (2–80 characters)'
+                    : null,
               ),
-            ),
-            if (_saving) const LinearProgressIndicator(),
-            if (_error != null) Text(_error!),
-          ],
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  ChoiceChip(
+                    key: const ValueKey('complete-shipper'),
+                    label: const Text('రైతు / వ్యాపారి (Farmer / Shipper)'),
+                    selected: _role == 'shipper',
+                    onSelected: _saving
+                        ? null
+                        : (_) => setState(() => _role = 'shipper'),
+                  ),
+                  ChoiceChip(
+                    key: const ValueKey('complete-driver'),
+                    label: const Text('డ్రైవర్ (Driver)'),
+                    selected: _role == 'driver',
+                    onSelected: _saving
+                        ? null
+                        : (_) => setState(() => _role = 'driver'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              MandalVillagePicker(onChanged: (id) => _villageId = id),
+              const SizedBox(height: 24),
+              FilledButton(
+                key: const ValueKey('complete-profile'),
+                onPressed: _saving ? null : _complete,
+                child: Text(
+                  _role == 'driver'
+                      ? 'వాహనం వివరాలు / Continue to vehicle details'
+                      : 'నమోదు చేయండి / Complete registration',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                key: const ValueKey('cancel-onboarding'),
+                onPressed: _saving ? null : _leave,
+                child: const Text(AppStrings.cancelRegistration, textAlign: TextAlign.center),
+              ),
+              if (_saving) const LinearProgressIndicator(),
+              if (_error != null) Text(_error!),
+            ],
+          ),
         ),
       ),
     ),

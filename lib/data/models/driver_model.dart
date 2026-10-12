@@ -36,10 +36,11 @@ class DriverModel {
   final double? capacityTons;
   final String? avatarUrl;
   final bool isPhoneVerified;
-  DriverModel copyWith({String? cardStyle, String? avatarUrl}) => DriverModel(
+  DriverModel copyWith({String? cardStyle, String? avatarUrl, String? phone}) =>
+      DriverModel(
     id: id,
     name: name,
-    phone: phone,
+    phone: phone ?? this.phone,
     village: village,
     currentSpot: currentSpot,
     vehicleType: vehicleType,

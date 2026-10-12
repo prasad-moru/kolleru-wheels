@@ -2,19 +2,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 
+Future<void> revealInVerticalList(
+  WidgetTester tester,
+  Finder target, {
+  Finder? scrollable,
+  double delta = 50,
+}) async {
+  try {
+    if (target.evaluate().isNotEmpty) {
+      await tester.ensureVisible(target.first);
+      await tester.pumpAndSettle();
+      return;
+    }
+  } catch (_) {
+    // The target may not be built yet; try scrolling next.
+  }
+
+  final scrollableFinder = scrollable ?? find.byType(Scrollable);
+  if (scrollableFinder.evaluate().isEmpty) {
+    await tester.pumpAndSettle();
+    return;
+  }
+
+  try {
+    await tester.scrollUntilVisible(
+      target,
+      delta,
+      scrollable: scrollableFinder.first,
+      maxScrolls: 30,
+    );
+    await tester.pumpAndSettle();
+  } catch (_) {
+    // Keep the helper usable when a target or scrollable disappears.
+    await tester.pumpAndSettle();
+  }
+}
+
 Future<void> chooseCluster(
   WidgetTester tester, {
   String mandalId = 'mandavalli',
   String villageId = 'pulaparru',
 }) async {
   final mandal = KolleruVillages.mandals.firstWhere((m) => m.id == mandalId);
-  await tester.ensureVisible(find.byKey(const ValueKey('mandal-picker')));
-  await tester.tap(find.byKey(const ValueKey('mandal-picker')));
+  final mandalPicker = find.byKey(const ValueKey('mandal-picker'));
+  await revealInVerticalList(tester, mandalPicker);
+  await tester.tap(mandalPicker);
   await tester.pumpAndSettle();
   await tester.tap(find.text('${mandal.teluguName} / ${mandal.name}').last);
   await tester.pumpAndSettle();
   final picker = find.byKey(ValueKey('village-picker-$mandalId'));
-  await tester.ensureVisible(picker);
+  await revealInVerticalList(tester, picker);
   await tester.tap(picker);
   await tester.pumpAndSettle();
   final village = find.text(KolleruVillages.find(villageId)!.label);

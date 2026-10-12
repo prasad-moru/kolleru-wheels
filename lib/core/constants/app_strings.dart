@@ -1,4 +1,10 @@
 abstract final class AppStrings {
+  static const cancelRegistration = 'రద్దు చేయండి / Cancel / Skip';
+  static const browseGuest = 'లాగిన్ లేకుండా చూడండి / Browse as Guest / Farmer';
+  static const signIn = 'లాగిన్ / Sign in';
+  static const signInToPost = 'లాగిన్ చేసి పోస్ట్ చేయండి / Sign in to post a load';
+  static const loginSubtitle = 'మన ఊరి వాహనాలు, నేరుగా పరిచయాలు / Local vehicles. Direct connections.';
+
   static const urgentBadge = 'అత్యవసరం / Urgent';
   static const callFarmer = 'రైతుకు కాల్ చేయండి / Call Farmer';
   static const anyVehicle = 'ఏ వాహనమైనా / Any vehicle';

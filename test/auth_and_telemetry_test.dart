@@ -19,6 +19,7 @@ import 'package:kolleru_wheels/presentation/common/call_button.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_dashboard_screen.dart';
 import 'package:kolleru_wheels/presentation/driver/driver_registration_screen.dart';
 import 'package:kolleru_wheels/data/repositories/local_driver_repository.dart';
+import 'package:kolleru_wheels/data/repositories/supabase_driver_repository.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/presentation/farmer/home_directory_screen.dart';
 import 'package:kolleru_wheels/presentation/admin/admin_dashboard_screen.dart';
@@ -75,6 +76,21 @@ Map<String, dynamic> otpSession() {
   };
 }
 
+Map<String, dynamic> cloudDriver({String phone = '9876543210'}) => {
+  'id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'user_id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'phone': phone,
+  'name': 'Existing Driver',
+  'base_village_id': 'pulaparru',
+  'current_spot_village_id': 'kaikaluru-town',
+  'vehicle_type': 'tataAce',
+  'capacity_tons': 1.5,
+  'vehicle_number': 'AP 39 AB 1234',
+  'specializations': ['Live Fish'],
+  'is_available': false,
+  'card_style': 'aqua_marine',
+};
+
 class SlowTelemetry extends TelemetryRepository {
   final completion = Completer<void>();
   bool called = false;
@@ -98,6 +114,91 @@ class AuthorizedTestAdmin extends AuthRepository {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('Indian phone variants normalize to the same verified identity', () {
+    for (final phone in ['9876543210', '+91 98765 43210', '919876543210', '(+91) 98765-43210']) {
+      expect(AuthRepository.normalizePhone(phone), '+919876543210');
+    }
+    for (final phone in ['+1 9876543210', '12345', '98letters76543210']) {
+      expect(() => AuthRepository.normalizePhone(phone), throwsFormatException);
+    }
+  });
+
+  test('Owner lookup queries UID and normalized phone and includes busy drivers', () async {
+    final client = mockClient((request) async {
+      expect(request.url.path, '/rest/v1/drivers');
+      final query = request.url.queryParameters;
+      expect(query['or'], contains('user_id.eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'));
+      expect(query['or'], contains('phone.in.(+919876543210,919876543210,9876543210)'));
+      expect(query, isNot(contains('is_available')));
+      // UID match also handles a row whose phone differs from the current session.
+      return response([cloudDriver(phone: '+919999999999')]);
+    });
+    await client.auth.recoverSession(jsonEncode(otpSession()));
+    final driver = (await SupabaseDriverRepository(client: client).getOwnDriver('91 98765 43210'))!;
+    expect(driver.phone, '+919876543210');
+    expect(driver.isAvailable, isFalse);
+    expect(driver.cardStyle, 'aqua_marine');
+  });
+
+  test('Older schemas fall back to phone and a failed read uses the owned cache', () async {
+    var offline = false;
+    final client = mockClient((request) async {
+      if (offline) throw StateError('Network unavailable');
+      if (request.url.queryParameters.containsKey('or')) {
+        return response({'code': '42703', 'message': 'column user_id does not exist'}, 400);
+      }
+      expect(request.url.queryParameters['phone'], contains('9876543210'));
+      return response([cloudDriver()..remove('user_id')]);
+    });
+    await client.auth.recoverSession(jsonEncode(otpSession()));
+    final repository = SupabaseDriverRepository(client: client);
+    expect((await repository.getOwnDriver('9876543210'))!.name, 'Existing Driver');
+    offline = true;
+    expect((await repository.getOwnDriver('9876543210'))!.name, 'Existing Driver');
+    await expectLater(repository.getOwnDriver('9999999999'), throwsStateError);
+  });
+
+  test('An empty owner read differs from an offline lookup without a cache', () async {
+    var offline = false;
+    final client = mockClient((request) async {
+      if (offline) throw StateError('Network unavailable');
+      return response([]);
+    });
+    await client.auth.recoverSession(jsonEncode(otpSession()));
+    final repository = SupabaseDriverRepository(client: client);
+    expect(await repository.getOwnDriver('9876543210'), isNull);
+    offline = true;
+    await expectLater(repository.getOwnDriver('9876543210'), throwsStateError);
+  });
+
+  test('OTP recovers a legacy driver without a user profile and retains the saved card', () async {
+    Map<String, dynamic>? identity;
+    final client = mockClient((request) async {
+      if (request.url.path.endsWith('/otp')) return response({});
+      if (request.url.path.endsWith('/verify')) return response(otpSession());
+      if (request.url.path == '/rest/v1/drivers') return response([cloudDriver()]);
+      expect(request.url.path, '/rest/v1/user_profiles');
+      if (request.method == 'POST') {
+        identity = Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+        expect(identity!['role'], 'driver');
+        expect(identity!['user_id'], 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+        return response(identity!);
+      }
+      return response(identity == null ? [] : [identity]);
+    });
+    final auth = AuthRepository(client: client, mockMode: false);
+    addTearDown(auth.dispose);
+    await auth.signInWithOtp(phone: '9876543210', role: 'shipper');
+    final identityProfile = await auth.verifyOTP(phone: '9876543210', token: '123456');
+    expect(identityProfile!.role, 'driver');
+    expect(auth.onboardingPhone, isNull);
+    final restored = (await LocalDriverRepository().getProfile())!;
+    expect(restored.phone, '+919876543210');
+    expect(restored.isAvailable, isFalse);
+    expect(restored.cardStyle, 'aqua_marine');
+    expect(restored.id, cloudDriver()['id']);
+  });
+
   testWidgets(
     'Commercial startup reveals no directory or load pool without a session',
     (tester) async {
@@ -208,6 +309,7 @@ void main() {
     final client = mockClient((request) async {
       if (request.url.path.endsWith('/otp')) return response({});
       if (request.url.path.endsWith('/verify')) return response(otpSession());
+      if (request.url.path == '/rest/v1/drivers') return response([]);
       expect(request.url.path, '/rest/v1/user_profiles');
       if (request.method == 'POST') {
         expect(request.url.queryParameters['on_conflict'], 'phone');
@@ -569,9 +671,13 @@ void main() {
       find.byKey(const ValueKey('auth-phone')),
       '9876543210',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('send-otp')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
+    await tester.ensureVisible(find.byKey(const ValueKey('verify-otp')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('verify-otp')));
     await tester.pumpAndSettle();
     expect(verified, isNull);
@@ -587,6 +693,7 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('auth-name')), 'Ramesh');
     await chooseCluster(tester);
     await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('send-otp')));
     await tester.pumpAndSettle();
     expect(verified?.role, 'shipper');
@@ -606,15 +713,18 @@ void main() {
       final auth = AuthRepository(mockMode: true);
       await tester.pumpWidget(KolleruWheelsApp(authRepository: auth));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('register-tab')));
+      final registerTab = find.byKey(const ValueKey('register-tab'));
+      await revealInVerticalList(tester, registerTab);
+      await tester.tap(registerTab);
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('auth-name')), 'Ramesh');
       await tester.enterText(
         find.byKey(const ValueKey('auth-phone')),
         '9876543210',
       );
-      await tester.ensureVisible(find.byKey(const ValueKey('auth-driver')));
-      await tester.tap(find.byKey(const ValueKey('auth-driver')));
+      final driverRole = find.byKey(const ValueKey('auth-driver'));
+      await revealInVerticalList(tester, driverRole);
+      await tester.tap(driverRole);
       await tester.pumpAndSettle();
       await chooseCluster(tester);
       await tester.ensureVisible(find.byKey(const ValueKey('auth-number')));
@@ -629,12 +739,14 @@ void main() {
       );
       expect(await LocalDriverRepository().getProfile(), isNull);
       await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('send-otp')));
       await tester.pumpAndSettle();
       expect(auth.currentProfile, isNull);
       await tester.ensureVisible(find.byKey(const ValueKey('auth-otp')));
       await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
       await tester.ensureVisible(find.byKey(const ValueKey('verify-otp')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('verify-otp')));
       await tester.pumpAndSettle();
       expect(auth.currentProfile?.role, 'driver');
@@ -720,9 +832,13 @@ void main() {
       find.byKey(const ValueKey('auth-phone')),
       '9876543210',
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('send-otp')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('auth-otp')), '123456');
+    await tester.ensureVisible(find.byKey(const ValueKey('verify-otp')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('verify-otp')));
     await tester.pumpAndSettle();
     expect(find.byType(HomeDirectoryScreen), findsOneWidget);

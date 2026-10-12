@@ -7,6 +7,7 @@ import '../../data/repositories/auth_repository.dart';
 import '../admin/admin_dashboard_screen.dart';
 import 'phone_otp_screen.dart';
 import 'role_destination.dart';
+import '../farmer/home_directory_screen.dart';
 
 class SessionRouter extends StatefulWidget {
   const SessionRouter({
@@ -29,7 +30,9 @@ class _SessionRouterState extends State<SessionRouter>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _auth.addListener(_changed);
-    if (_auth.currentProfile == null && _auth.onboardingPhone == null) {
+    if (!_auth.isGuest &&
+        _auth.currentProfile == null &&
+        _auth.onboardingPhone == null) {
       _restore();
     }
   }
@@ -62,7 +65,9 @@ class _SessionRouterState extends State<SessionRouter>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final profile = _auth.currentProfile;
-    final destination = profile?.role == 'admin'
+    final destination = _auth.isGuest
+        ? HomeDirectoryScreen(authRepository: _auth)
+        : profile?.role == 'admin'
         ? AdminDashboardScreen(
             authRepository: _auth,
             analyticsRepository: widget.adminAnalyticsRepository,

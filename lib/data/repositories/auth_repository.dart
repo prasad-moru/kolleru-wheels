@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/supabase_config.dart';
+import '../../core/utils/indian_phone_number.dart';
 import '../models/user_profile_model.dart';
 import '../models/local_driver_profile.dart';
 import 'local_driver_repository.dart';
@@ -19,9 +20,11 @@ class AuthRepository extends ChangeNotifier {
     bool? mockMode,
     DateTime Function()? now,
     this.sessionTimeout = const Duration(days: 7),
+    SupabaseDriverRepository? driverRepository,
   }) : _client = client ?? SupabaseConfig.client,
        isMock = mockMode ?? (client == null && !SupabaseConfig.isConfigured),
-       _now = now ?? DateTime.now {
+       _now = now ?? DateTime.now,
+       _injectedDrivers = driverRepository {
     _authChanges = _client?.auth.onAuthStateChange.listen((event) {
       if (event.event == AuthChangeEvent.signedOut) {
         _verifiedPhone = null;
@@ -50,6 +53,75 @@ class AuthRepository extends ChangeNotifier {
 
   static final instance = AuthRepository();
   final SupabaseClient? _client;
+  final SupabaseDriverRepository? _injectedDrivers;
+  late final _drivers =
+      _injectedDrivers ?? SupabaseDriverRepository(client: _client);
+  bool _guestMode = false;
+  bool get isGuest => _guestMode;
+
+  void endGuestMode() {
+    _guestMode = false;
+    notifyListeners();
+  }
+
+  Future<void> browseAsGuest() async {
+    try {
+      await signOut();
+    } finally {
+      _verifiedPhone = null;
+      onboardingPhone = null;
+      _currentProfile = null;
+      _guestMode = true;
+      notifyListeners();
+    }
+  }
+
+  Future<LocalDriverProfile?> restoreDriverProfile({
+    required LocalDriverRepository localRepository,
+    UserProfile? identity,
+  }) async {
+    final owner = identity ?? currentProfile;
+    if (owner == null || owner.role != 'driver') return null;
+    final phone = normalizePhone(owner.phone);
+    if (verifiedPhone == null || normalizePhone(verifiedPhone!) != phone) {
+      return null;
+    }
+    final saved = await localRepository.getProfile();
+    if (verifiedPhone == null || normalizePhone(verifiedPhone!) != phone) {
+      throw StateError('Driver identity changed during restoration');
+    }
+    if (saved != null && normalizePhone(saved.phone) == phone) {
+      if (saved.phone == phone) return saved;
+      final normalized = LocalDriverProfile.fromDriverModel(
+        saved.toDriverModel().copyWith(phone: phone),
+      );
+      await localRepository.saveProfile(normalized);
+      return normalized;
+    }
+    if (isMock && _injectedDrivers == null) return null;
+    final driver = await _drivers.getOwnDriver(phone);
+    if (driver == null) return null;
+    if (verifiedPhone == null || normalizePhone(verifiedPhone!) != phone) {
+      throw StateError('Driver identity changed during restoration');
+    }
+    final restored = LocalDriverProfile.fromDriverModel(
+      driver.copyWith(phone: phone),
+    );
+    await localRepository.saveProfile(restored);
+    return restored;
+  }
+
+  Future<bool> resumeExistingDriver(UserProfile identity) async {
+    final driver = await restoreDriverProfile(
+      localRepository: LocalDriverRepository(),
+      identity: identity,
+    );
+    if (driver == null) return false;
+    await _cache(identity);
+    currentProfile = identity;
+    return true;
+  }
+
   final bool isMock;
   final DateTime Function() _now;
   final Duration sessionTimeout;
@@ -58,6 +130,7 @@ class AuthRepository extends ChangeNotifier {
   UserProfile? get currentProfile => _currentProfile;
   set currentProfile(UserProfile? value) {
     _currentProfile = value;
+    if (value != null) _guestMode = false;
     notifyListeners();
   }
 
@@ -69,7 +142,7 @@ class AuthRepository extends ChangeNotifier {
     final raw = _client?.auth.currentUser?.phone;
     return raw == null
         ? null
-        : normalizePhone(raw.startsWith('+') ? raw : '+$raw');
+        : normalizePhone(raw);
   }
 
   DateTime? _sentAt;
@@ -132,14 +205,7 @@ class AuthRepository extends ChangeNotifier {
     return false;
   }
 
-  static String normalizePhone(String phone) {
-    final digits = phone.replaceAll(RegExp(r'\s'), '');
-    final value = digits.startsWith('+91') ? digits.substring(3) : digits;
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(value)) {
-      throw const FormatException('Enter a valid 10-digit mobile number');
-    }
-    return '+91$value';
-  }
+  static String normalizePhone(String phone) => IndianPhoneNumber.normalize(phone);
 
   Future<void> signInWithOtp({
     required String phone,
@@ -192,7 +258,7 @@ class AuthRepository extends ChangeNotifier {
     _verifiedPhone = normalized;
     final profile = isMock
         ? await _cachedProfile(normalized)
-        : await _remoteProfile(normalized);
+        : await _verifiedIdentity(normalized);
     if (profile == null) {
       await _markOnboarding(normalized);
     } else if (publishSession) {
@@ -211,6 +277,28 @@ class AuthRepository extends ChangeNotifier {
         .maybeSingle()
         .timeout(const Duration(seconds: 8));
     return row == null ? null : UserProfile.fromJson(row);
+  }
+
+  /// Recover pre-onboarding accounts from an owned, usable driver row.
+  /// Existing authoritative roles always take precedence over directory data.
+  Future<UserProfile?> _verifiedIdentity(String phone) async {
+    final identity = await _remoteProfile(phone);
+    if (identity != null) return identity;
+    final driver = await _drivers.getOwnDriver(phone);
+    if (driver == null) return null;
+    final profile = await createUserProfile(
+      phone: phone,
+      name: driver.name,
+      role: 'driver',
+      villageId: driver.village.id,
+      publishSession: false,
+    );
+    if (profile.role == 'driver') {
+      await LocalDriverRepository().saveProfile(
+        LocalDriverProfile.fromDriverModel(driver.copyWith(phone: phone)),
+      );
+    }
+    return profile;
   }
 
   Future<UserProfile?> _cachedProfile(String phone) async {
@@ -310,6 +398,7 @@ class AuthRepository extends ChangeNotifier {
       publishSession: false,
     );
     if (profile.role == 'driver' && driver != null) {
+      if (await resumeExistingDriver(profile)) return profile;
       final driverRepository = SupabaseDriverRepository(client: _client);
       if (avatarBytes != null && !isMock) {
         final avatarUrl = await driverRepository.uploadDriverAvatar(
@@ -371,10 +460,8 @@ class AuthRepository extends ChangeNotifier {
         }
         final phone = _client?.auth.currentUser?.phone;
         if (!isMock && phone != null) {
-          final normalized = normalizePhone(
-            phone.startsWith('+') ? phone : '+$phone',
-          );
-          final profile = await _remoteProfile(normalized);
+          final normalized = normalizePhone(phone);
+          final profile = await _verifiedIdentity(normalized);
           if (profile == null) {
             await _markOnboarding(normalized);
           } else {
@@ -400,7 +487,7 @@ class AuthRepository extends ChangeNotifier {
       }
       if (!isMock) {
         try {
-          final remote = await _remoteProfile(profile.phone);
+          final remote = await _verifiedIdentity(profile.phone);
           if (remote == null) {
             await _markOnboarding(profile.phone);
             return null;
@@ -454,7 +541,7 @@ class AuthRepository extends ChangeNotifier {
     try {
       final raw = _client!.auth.currentUser!.phone;
       if (raw == null) return false;
-      final phone = normalizePhone(raw.startsWith('+') ? raw : '+$raw');
+      final phone = normalizePhone(raw);
       return (await _remoteProfile(phone))?.role == 'admin';
     } catch (_) {
       return false;
@@ -462,16 +549,20 @@ class AuthRepository extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_sessionKey);
-    await prefs.remove(_onboardingKey);
     onboardingPhone = null;
     _verifiedPhone = null;
     currentProfile = null;
     _pendingPhone = null;
     _lastActiveWrite = null;
-    if (!isMock && _client != null) {
-      await _client.auth.signOut(scope: SignOutScope.local);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_sessionKey);
+      await prefs.remove(_onboardingKey);
+    } finally {
+      if (!isMock && _client != null) {
+        await _client.auth.signOut(scope: SignOutScope.local)
+            .timeout(const Duration(seconds: 8));
+      }
     }
   }
 }

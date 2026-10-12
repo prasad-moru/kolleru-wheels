@@ -125,6 +125,8 @@ void main() {
         ),
       );
       await tester.enterText(find.byKey(const ValueKey('auth-phone')), '12345');
+      await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('send-otp')));
       await tester.pumpAndSettle();
       expect(auth.requests, 0);
@@ -134,6 +136,7 @@ void main() {
         '+91 9876543210',
       );
       await tester.ensureVisible(find.byKey(const ValueKey('send-otp')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('send-otp')));
       await tester.pumpAndSettle();
       expect(auth.requests, 1);
