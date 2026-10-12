@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
+import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/supabase_load_request_repository.dart';
-import '../common/call_button.dart';
+import 'load_dispatch_card.dart';
 
 class LoadPoolBoard extends StatefulWidget {
   const LoadPoolBoard({
@@ -15,23 +16,18 @@ class LoadPoolBoard extends StatefulWidget {
     required this.repository,
     this.operationalMandalId,
     this.callerPhone,
+    this.vehicleType,
   });
   final LoadRequestRepository repository;
   final String? operationalMandalId;
   final String? callerPhone;
+  final VehicleType? vehicleType;
   @override
-  State<LoadPoolBoard> createState() => _LoadPoolBoardState();
+  LoadPoolBoardState createState() => LoadPoolBoardState();
 }
 
-class _LoadPoolBoardState extends State<LoadPoolBoard>
+class LoadPoolBoardState extends State<LoadPoolBoard>
     with WidgetsBindingObserver {
-  IconData _materialIcon(String material) => switch (material) {
-    'ఐరన్ / రాడ్లు' => Icons.hardware,
-    'సిమెంట్' => Icons.inventory_2,
-    'పైపులు' => Icons.plumbing,
-    'చేపల దాణా' => Icons.grain,
-    _ => Icons.category,
-  };
   List<LoadRequestModel> _requests = [];
   Timer? _timer;
   bool _failed = false;
@@ -41,28 +37,31 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    widget.repository.addListener(_refresh);
-    _refresh();
+    widget.repository.addListener(refresh);
+    refresh();
   }
 
   @override
   void didUpdateWidget(covariant LoadPoolBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.repository != oldWidget.repository) {
-      oldWidget.repository.removeListener(_refresh);
-      widget.repository.addListener(_refresh);
-      _refresh();
-    } else if (widget.operationalMandalId != oldWidget.operationalMandalId) {
-      _refresh();
+      oldWidget.repository.removeListener(refresh);
+      widget.repository.addListener(refresh);
+      refresh();
+    } else if (widget.operationalMandalId != oldWidget.operationalMandalId ||
+        widget.vehicleType != oldWidget.vehicleType) {
+      refresh();
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refresh();
+    if (state == AppLifecycleState.resumed) refresh();
   }
 
-  Future<void> _refresh() async {
+  /// Reload through the repository while preserving notifications and expiry.
+  /// Shared by the dashboard's pull gesture, retry controls, and lifecycle.
+  Future<void> refresh() async {
     final revision = ++_revision;
     try {
       final requests = await widget.repository.getActiveRequests(
@@ -102,109 +101,151 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
       delay.isNegative || delay == Duration.zero
           ? const Duration(milliseconds: 1)
           : delay,
-      _refresh,
+      refresh,
     );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    widget.repository.removeListener(_refresh);
+    widget.repository.removeListener(refresh);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  Widget _emptyState(BuildContext context) => Container(
+    key: const ValueKey('load-pool-empty'),
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+    ),
+    child: Column(
+      children: [
+        Container(
+          width: 92,
+          height: 92,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFFECFDF5),
+          ),
+          child: const Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(Icons.local_shipping_outlined, size: 44, color: Color(0xFF0F5132)),
+              Positioned(
+                bottom: 14,
+                right: 10,
+                child: Icon(Icons.eco, size: 26, color: Color(0xFF059669)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          AppStrings.noLoads,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: const Color(0xFF0F172A),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(AppStrings.loadMatchHint, textAlign: TextAlign.center),
+        const SizedBox(height: 20),
+        OutlinedButton.icon(
+          onPressed: refresh,
+          icon: const Icon(Icons.refresh),
+          label: const Text(AppStrings.refreshLoads, textAlign: TextAlign.center),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final now = widget.repository.currentTime;
-    // Filter at build as well, so resumed/rebuilt views never display stale loads.
+    // Recheck expiry and filters on every build as well as repository refresh.
     final requests = _requests.where(
-      (r) =>
-          r.isActiveAt(now) &&
+      (request) => request.isActiveAt(now) &&
           (widget.operationalMandalId == null ||
-              ProximityMatcher.mandalId(r.toVillageId) ==
-                  widget.operationalMandalId),
-    );
+              ProximityMatcher.mandalId(request.toVillageId) == widget.operationalMandalId) &&
+          (widget.vehicleType == null || request.vehicleTypeNeeded == null ||
+              request.vehicleTypeNeeded == widget.vehicleType),
+    ).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          AppStrings.loadPool,
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                AppStrings.loadPool,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: const Color(0xFF0F172A),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('refresh-load-pool'),
+              tooltip: AppStrings.refreshLoads,
+              onPressed: _loading ? null : refresh,
+              icon: const Icon(Icons.refresh, color: Color(0xFF0F5132)),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          widget.repository is SupabaseLoadRequestRepository
-              ? 'క్లౌడ్ లోడ్లు • ఆఫ్‌లైన్ క్యాష్ • 30 నిమిషాల వరకు / Cloud loads • offline cache • 30-minute expiry'
-              : AppStrings.localLoadNote,
-        ),
+        const SizedBox(height: 6),
+        const Text(AppStrings.freightBoardHint),
+        if (widget.operationalMandalId != null) ...[
+          const SizedBox(height: 6),
+          const Text(AppStrings.mandalLoadNote),
+        ],
         if (widget.repository is SupabaseLoadRequestRepository &&
             (widget.repository as SupabaseLoadRequestRepository).syncPending)
-          const Text(
-            'ఫోన్‌లో సేవ్ అయింది • సింక్ పెండింగ్ / Saved locally • sync pending',
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('ఫోన్‌లో సేవ్ అయింది • సింక్ పెండింగ్ / Saved locally • sync pending'),
           ),
-        if (widget.operationalMandalId != null)
-          const Text(AppStrings.mandalLoadNote),
+        const SizedBox(height: 16),
         if (_loading)
-          const LinearProgressIndicator()
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: LinearProgressIndicator(),
+          )
         else if (_failed)
-          TextButton(
-            onPressed: _refresh,
-            child: const Text(
-              '${AppStrings.loadFailedPool} — ${AppStrings.retry}',
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.cloud_off_outlined, size: 32, color: Color(0xFF475569)),
+                const SizedBox(height: 10),
+                const Text(AppStrings.loadFailedPool, textAlign: TextAlign.center),
+                TextButton.icon(
+                  onPressed: refresh,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text(AppStrings.retry),
+                ),
+              ],
             ),
           )
         else if (requests.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Text(AppStrings.noLoads),
-          )
+          _emptyState(context)
         else
           for (final request in requests)
-            Card(
-              key: ValueKey('load-${request.id}'),
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Color(0xFFD97706)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${request.fromLocation} ➔ ${request.toVillage.label}',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      Chip(avatar: Icon(_materialIcon(request.materialType), size: 18),
-                        label: Text('${AppStrings.material}: ${request.materialType}')),
-                      Chip(avatar: const Icon(Icons.timer_outlined, size: 18),
-                        backgroundColor: const Color(0xFFFEF3C7),
-                        label: Text('${(request.expiresAt.difference(now).inSeconds / 60).ceil()} నిమి / min left')),
-                    ]),
-                    if (request.vehicleTypeNeeded != null)
-                      Text(request.vehicleTypeNeeded!.label),
-                    Text(request.posterName),
-                    const SizedBox(height: 8),
-                    Text(
-                      now.difference(request.createdAt).inMinutes < 1
-                          ? AppStrings.justPosted
-                          : '${now.difference(request.createdAt).inMinutes} నిమిషాల క్రితం / minutes ago',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 12),
-                    CallButton(
-                      phone: request.posterPhone,
-                      label: AppStrings.callShipper,
-                      callerPhone: widget.callerPhone,
-                      callerRole: 'driver',
-                      contextNote: 'urgent_load:${request.id}',
-                    ),
-                  ],
-                ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: LoadDispatchCard(
+                key: ValueKey('load-${request.id}'),
+                request: request,
+                now: now,
+                callerPhone: widget.callerPhone,
               ),
             ),
       ],

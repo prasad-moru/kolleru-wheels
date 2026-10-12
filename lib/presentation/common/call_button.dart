@@ -22,6 +22,8 @@ class CallButton extends StatefulWidget {
     this.compact = false,
     this.backgroundColor,
     this.elevated = false,
+    this.borderRadius,
+    this.maxLabelLines = 2,
   });
   final String phone;
   final bool isDemo;
@@ -34,6 +36,8 @@ class CallButton extends StatefulWidget {
   final bool compact;
   final Color? backgroundColor;
   final bool elevated;
+  final double? borderRadius;
+  final int? maxLabelLines;
   @override
   State<CallButton> createState() => _CallButtonState();
 }
@@ -82,6 +86,11 @@ class _CallButtonState extends State<CallButton> {
           backgroundColor: widget.backgroundColor ?? AppColors.green,
           foregroundColor: Colors.white,
           elevation: widget.elevated ? 2 : 0,
+          shape: widget.borderRadius == null
+              ? null
+              : RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(widget.borderRadius!),
+                ),
           shadowColor: const Color(0x33059669),
           minimumSize: Size.fromHeight(widget.compact ? 58 : 64),
           padding: EdgeInsets.symmetric(horizontal: widget.compact ? 10 : 20),
@@ -103,8 +112,10 @@ class _CallButtonState extends State<CallButton> {
             Flexible(
               child: Text(
                 widget.label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                maxLines: widget.maxLabelLines,
+                overflow: widget.maxLabelLines == null
+                    ? TextOverflow.visible
+                    : TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
             ),

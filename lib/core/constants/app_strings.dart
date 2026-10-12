@@ -1,4 +1,11 @@
 abstract final class AppStrings {
+  static const urgentBadge = 'అత్యవసరం / Urgent';
+  static const callFarmer = 'రైతుకు కాల్ చేయండి / Call Farmer';
+  static const anyVehicle = 'ఏ వాహనమైనా / Any vehicle';
+  static const freightBoardHint = 'మీ ప్రాంతంలో సరుకు రవాణా / Freight in your area';
+  static const loadMatchHint = 'మీ వాహనం, మండలానికి సరిపోయే లోడ్లు ఇక్కడ కనిపిస్తాయి / Loads matching your vehicle and mandal appear here';
+  static const refreshLoads = 'లోడ్లు నవీకరించండి / Refresh loads';
+
   static const whatsapp = 'వాట్సాప్ / WhatsApp';
   static const verifiedPhone = 'ధృవీకరించిన ఫోన్ / Verified phone';
   static const loadingDrivers = 'వాహనాలు వెతుకుతున్నాం / Finding vehicles…';

@@ -210,21 +210,21 @@ void main() {
       await tester.pumpWidget(board('mandavalli'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Market ➔ ${KolleruVillages.find('pulaparru')!.label}'),
+        find.text(KolleruVillages.find('pulaparru')!.label),
         findsOneWidget,
       );
       expect(
-        find.text('Market ➔ ${KolleruVillages.find('kaikaluru-town')!.label}'),
+        find.text(KolleruVillages.find('kaikaluru-town')!.label),
         findsNothing,
       );
       await tester.pumpWidget(board('kaikaluru'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Market ➔ ${KolleruVillages.find('pulaparru')!.label}'),
+        find.text(KolleruVillages.find('pulaparru')!.label),
         findsNothing,
       );
       expect(
-        find.text('Market ➔ ${KolleruVillages.find('kaikaluru-town')!.label}'),
+        find.text(KolleruVillages.find('kaikaluru-town')!.label),
         findsOneWidget,
       );
       await tester.pumpWidget(const SizedBox());

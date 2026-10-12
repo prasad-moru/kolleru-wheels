@@ -213,7 +213,7 @@ void main() {
     await create(repository);
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.justPosted), findsOneWidget);
-    expect(find.text(AppStrings.callShipper), findsOneWidget);
+    expect(find.text(AppStrings.callFarmer), findsOneWidget);
     now = now.add(const Duration(minutes: 29, seconds: 59));
     await tester.pump(const Duration(minutes: 29, seconds: 59));
     await tester.pumpAndSettle();
@@ -222,7 +222,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
     expect(find.text(AppStrings.noLoads), findsOneWidget);
-    expect(find.text(AppStrings.callShipper), findsNothing);
+    expect(find.text(AppStrings.callFarmer), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
