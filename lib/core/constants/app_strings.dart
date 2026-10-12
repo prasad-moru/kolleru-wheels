@@ -1,4 +1,11 @@
 abstract final class AppStrings {
+  static const whatsapp = 'వాట్సాప్ / WhatsApp';
+  static const verifiedPhone = 'ధృవీకరించిన ఫోన్ / Verified phone';
+  static const loadingDrivers = 'వాహనాలు వెతుకుతున్నాం / Finding vehicles…';
+  static const directoryHint = 'మీ పొలం నుంచి గమ్యం వరకు / From your farm to your destination';
+  static const emptyDirectoryHint = 'మరో మండలం లేదా వాహనం ఎంచుకోండి / Try another locality or vehicle';
+  static const chooseVehicle = 'వాహనం ఎంచుకోండి / Choose a vehicle';
+
   static const tierLocal = 'మీ ఊరిలోనే ఉన్న వాహనాలు (In your village)';
   static const tierMandal = 'మండల కేంద్రంలో అందుబాటులో ఉన్నవి (In Mandal hub)';
   static const tierDelta = 'చుట్టుపక్కల మండలాలు (Nearby Mandals)';

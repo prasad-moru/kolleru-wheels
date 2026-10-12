@@ -65,6 +65,39 @@ void main() {
   });
   tearDown(() => AuthRepository.instance.currentProfile = null);
 
+  test('Card style defaults for legacy JSON and survives profile updates', () async {
+    final legacy = profile().toJson()..remove('cardStyle');
+    expect(LocalDriverProfile.fromJson(legacy).cardStyle, 'classic_delta');
+    final repository = LocalDriverRepository();
+    await repository.saveProfile(profile().copyWith(cardStyle: 'gold_elite'));
+    await repository.updateAvailability(false);
+    final restored = (await LocalDriverRepository().getProfile())!;
+    expect(restored.cardStyle, 'gold_elite');
+    expect(restored.toDriverModel().cardStyle, 'gold_elite');
+    expect(restored.toDriverModel().copyWith(avatarUrl: 'photo').cardStyle, 'gold_elite');
+  });
+
+  testWidgets('Owner selects a style and it persists after reopening', (tester) async {
+    final saved = profile();
+    await LocalDriverRepository().saveProfile(saved);
+    await tester.pumpWidget(MaterialApp(theme: AppTheme.light,
+      home: VisitingCardScreen(driver: saved.toDriverModel())));
+    await tester.pumpAndSettle();
+    final selector = find.byKey(const ValueKey('card-style-aqua_marine'));
+    await tester.ensureVisible(selector);
+    await tester.tap(selector);
+    await tester.pumpAndSettle();
+    final restored = (await LocalDriverRepository().getProfile())!;
+    expect(restored.cardStyle, 'aqua_marine');
+    expect(tester.widget<TransportVisitingCard>(find.byType(TransportVisitingCard)).driver.cardStyle, 'aqua_marine');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(MaterialApp(theme: AppTheme.light,
+      home: VisitingCardScreen(driver: restored.toDriverModel())));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TransportVisitingCard>(find.byType(TransportVisitingCard)).driver.cardStyle, 'aqua_marine');
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'Profile survives repository recreation and concurrent field updates',
     () async {

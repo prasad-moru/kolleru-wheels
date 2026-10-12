@@ -4,7 +4,7 @@ import '../constants/app_colors.dart';
 
 abstract final class AppTheme {
   static const _ink = Color(0xFF19332C);
-  static const _muted = Color(0xFF64736D);
+  static const _muted = Color(0xFF47564F);
   static const _line = Color(0x1F19332C);
 
   // System fonts keep Telugu readable without adding a network font dependency.
@@ -34,28 +34,28 @@ abstract final class AppTheme {
         color: _ink,
         fontSize: 32,
         height: 1.15,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.8,
       ),
       headlineSmall: TextStyle(
         color: _ink,
         fontSize: 26,
         height: 1.2,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.45,
       ),
       titleLarge: TextStyle(
         color: _ink,
         fontSize: 20,
         height: 1.3,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.2,
       ),
       titleMedium: TextStyle(
         color: _ink,
         fontSize: 16,
         height: 1.35,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.1,
       ),
       bodyLarge: TextStyle(
@@ -75,7 +75,7 @@ abstract final class AppTheme {
       labelLarge: TextStyle(
         fontSize: 15,
         height: 1.2,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.1,
       ),
     ),
@@ -88,7 +88,7 @@ abstract final class AppTheme {
       titleTextStyle: TextStyle(
         color: _ink,
         fontSize: 18,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: -0.2,
       ),
     ),
@@ -99,7 +99,7 @@ abstract final class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(
           fontSize: 15,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w400,
           letterSpacing: -0.1,
         ),
       ),
@@ -112,7 +112,7 @@ abstract final class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(
           fontSize: 15,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w400,
           letterSpacing: -0.1,
         ),
       ),
@@ -146,7 +146,7 @@ abstract final class AppTheme {
       backgroundColor: const Color(0xFFF1F5F2),
       selectedColor: const Color(0xFFE3F2EA),
       side: const BorderSide(color: _line),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       labelStyle: const TextStyle(fontWeight: FontWeight.w400, color: _ink),
     ),
   );

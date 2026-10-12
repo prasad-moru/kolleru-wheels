@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kolleru_wheels/main.dart';
+import 'package:kolleru_wheels/presentation/common/driver_directory_card.dart';
 import 'package:kolleru_wheels/core/constants/villages.dart';
 import 'package:kolleru_wheels/core/constants/app_strings.dart';
 import 'package:kolleru_wheels/data/models/vehicle_type.dart';
@@ -27,16 +28,39 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text(AppStrings.tierLocal), 200);
+      await tester.scrollUntilVisible(find.text(AppStrings.tierLocal), 200,
+        scrollable: find.byType(Scrollable).last);
       expect(find.text(AppStrings.tierLocal), findsOneWidget);
-      await tester.scrollUntilVisible(find.text(AppStrings.tierMandal), 200);
+      await tester.scrollUntilVisible(find.text(AppStrings.tierMandal), 200,
+        scrollable: find.byType(Scrollable).last);
       expect(find.text(AppStrings.tierMandal), findsOneWidget);
-      await tester.scrollUntilVisible(find.text(AppStrings.tierDelta), 200);
+      await tester.scrollUntilVisible(find.text(AppStrings.tierDelta), 200,
+        scrollable: find.byType(Scrollable).last);
       expect(find.text(AppStrings.tierDelta), findsOneWidget);
       expect(find.text(AppStrings.busyDrivers), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('Pinned mandal chips filter current driver locality', (tester) async {
+    await tester.pumpWidget(KolleruWheelsApp(
+      authRepository: AuthRepository(mockMode: true)
+        ..currentProfile = const UserProfile(phone: '+919876543210', role: 'shipper'),
+    ));
+    await tester.pumpAndSettle();
+    final chip = find.byKey(const ValueKey('mandal-mandavalli'));
+    await tester.ensureVisible(chip);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250,
+      scrollable: find.byType(Scrollable).last);
+    expect(chip.hitTestable(), findsOneWidget);
+    expect(find.text('డ్రైవర్లు / Drivers: 1'), findsOneWidget);
+    await tester.scrollUntilVisible(find.byType(DriverDirectoryCard), 150,
+      scrollable: find.byType(Scrollable).last);
+    expect(tester.widget<DriverDirectoryCard>(find.byType(DriverDirectoryCard)).driver.cardStyle, 'classic_delta');
+    expect(tester.takeException(), isNull);
+  });
+
   test('Unique villages and driver filtering', () {
     expect(KolleruVillages.all.length, 26);
     expect(KolleruVillages.all.map((v) => v.id).toSet().length, 26);
@@ -77,9 +101,11 @@ void main() {
       find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250);
+    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250,
+        scrollable: find.byType(Scrollable).last);
     expect(find.text('డ్రైవర్లు / Drivers: 1'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('రమేష్ / Ramesh'), 150);
+    await tester.scrollUntilVisible(find.text('రమేష్ / Ramesh'), 150,
+        scrollable: find.byType(Scrollable).last);
     await tester.ensureVisible(find.text('రమేష్ / Ramesh'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('రమేష్ / Ramesh'));

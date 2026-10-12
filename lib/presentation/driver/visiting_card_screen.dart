@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../core/theme/driver_card_style.dart';
 import '../../core/constants/app_strings.dart';
 import '../../data/models/driver_model.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -42,7 +43,7 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
       _auth.currentProfile?.phone == _driver.phone;
 
   Future<void> _saveAvatar(Uint8List bytes) async {
-    if (_savingAvatar || !_canEditAvatar) return;
+    if (_savingAvatar || _savingStyle || !_canEditAvatar) return;
     setState(() {
       _savingAvatar = true;
       _avatarBytes = bytes;
@@ -86,28 +87,42 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
     }
   }
 
-  DriverModel _driverWithAvatar(DriverModel driver, String url) => DriverModel(
-    id: driver.id,
-    name: driver.name,
-    phone: driver.phone,
-    village: driver.village,
-    currentSpot: driver.currentSpot,
-    vehicleType: driver.vehicleType,
-    capacity: driver.capacity,
-    isAvailable: driver.isAvailable,
-    isDemo: driver.isDemo,
-    vehicleNumber: driver.vehicleNumber,
-    specializations: driver.specializations,
-    currentSpotVillageId: driver.currentSpotVillageId,
-    capacityTons: driver.capacityTons,
-    avatarUrl: url,
-    isPhoneVerified: driver.isPhoneVerified,
-  );
+  DriverModel _driverWithAvatar(DriverModel driver, String url) =>
+      driver.copyWith(avatarUrl: url);
+
+  bool _savingStyle = false;
+  Future<void> _saveStyle(String style) async {
+    if (!_canEditAvatar || _savingStyle || _savingAvatar) return;
+    setState(() => _savingStyle = true);
+    try {
+      final repository = LocalDriverRepository();
+      final local = await repository.getProfile();
+      if (local == null || local.id != _driver.id || local.phone != _driver.phone) {
+        throw StateError('Driver profile unavailable');
+      }
+      final updated = local.copyWith(cardStyle: style);
+      await repository.updateProfile(updated);
+      await _driverRepository.upsertDriver(updated.toDriverModel());
+      if (mounted) {
+        setState(() => _driver = updated.toDriverModel());
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          _driverRepository.syncPending ? 'ఫోన్‌లో సేవ్ అయింది / Saved locally • sync pending' : 'స్టైల్ సేవ్ అయింది / Style saved',
+        )));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.saveFailed)));
+      }
+    } finally {
+      if (mounted) setState(() => _savingStyle = false);
+    }
+  }
 
   Future<void> _openWhatsApp() async {
     if (_driver.isDemo) return;
     final digits = _driver.phone.replaceAll(RegExp(r'[^0-9]'), '');
-    final phone = digits.startsWith('91') ? digits : '91$digits';
+    final phone = digits.length == 10 ? '91$digits' : digits;
     final text = Uri.encodeComponent(
       'నమస్కారం ${_driver.name}, Kolleru Wheels ద్వారా సంప్రదిస్తున్నాను.',
     );
@@ -209,6 +224,50 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_canEditAvatar) ...[
+                Text('కార్డ్ స్టైల్ / Card style', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: [
+                    for (final style in DriverCardStyle.styles)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Semantics(selected: driver.cardStyle == style.id,
+                          child: OutlinedButton(
+                            key: ValueKey('card-style-${style.id}'),
+                            style: OutlinedButton.styleFrom(backgroundColor: style.surface,
+                              foregroundColor: style.ink, side: BorderSide(color: style.accent,
+                                width: driver.cardStyle == style.id ? 3 : 1)),
+                            onPressed: _savingStyle || _savingAvatar ? null : () => _saveStyle(style.id),
+                            child: Column(children: [
+                              Container(
+                                width: 108, height: 48,
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: style.surface, border: Border.all(color: style.accent), borderRadius: BorderRadius.circular(8)),
+                                child: Row(children: [
+                                  Icon(driver.cardStyle == style.id ? Icons.check_circle : Icons.local_shipping_outlined, color: style.accent),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                                    Container(height: 3, color: style.ink),
+                                    const SizedBox(height: 6),
+                                    Container(height: 3, color: style.accent),
+                                    const SizedBox(height: 6),
+                                    Container(height: 5, color: style.tag),
+                                  ])),
+                                ]),
+                              ),
+                              Text(style.label),
+                            ]),
+                          ),
+                        ),
+                      ),
+                  ]),
+                ),
+                if (_savingStyle) const LinearProgressIndicator(),
+                const SizedBox(height: 16),
+              ],
               RepaintBoundary(
                 key: _cardKey,
                 child: TransportVisitingCard(driver: driver),
@@ -219,6 +278,7 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                   final callAction = CallButton(
                     phone: driver.phone,
                     contextNote: 'visiting_card:${driver.id}',
+                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle).action,
                     isDemo: driver.isDemo,
                     label: 'కాల్ / Call',
                     compact: true,
@@ -293,7 +353,7 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                 builder: (buttonContext) => FilledButton(
                   key: const ValueKey('share-visiting-card'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.green,
+                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle).action,
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(64),
                   ),
@@ -343,13 +403,15 @@ class TransportVisitingCard extends StatelessWidget {
   const TransportVisitingCard({super.key, required this.driver});
   final DriverModel driver;
 
+  DriverCardStyle get palette => DriverCardStyle.resolve(driver.cardStyle);
+
   Widget _badge(String text, {Color color = const Color(0xFFE8F4EB)}) =>
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0x1A19332C)),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: palette.accent.withValues(alpha: 0.35)),
         ),
         child: Text(
           text,
@@ -362,6 +424,7 @@ class TransportVisitingCard extends StatelessWidget {
       );
 
   Color _specializationColor(String label) {
+    if (driver.cardStyle != 'classic_delta') return palette.tag;
     final value = label.toLowerCase();
     if (value.contains('fish') || value.contains('చేప')) {
       return const Color(0xFFEAF4FA);
@@ -372,7 +435,7 @@ class TransportVisitingCard extends StatelessWidget {
     if (value.contains('cement') || value.contains('సిమెంట్')) {
       return const Color(0xFFF7F0E7);
     }
-    return const Color(0xFFF1F5F2);
+    return palette.tag;
   }
 
   String get _capacityLabel => driver.capacityTons == null
@@ -380,7 +443,12 @@ class TransportVisitingCard extends StatelessWidget {
       : '${driver.capacityTons!.toStringAsFixed(driver.capacityTons! % 1 == 0 ? 0 : 1)} టన్నులు / Tons';
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context) => Theme(
+    data: palette.theme(Theme.of(context)),
+    child: Builder(builder: _buildCard),
+  );
+
+  Widget _buildCard(BuildContext context) => Card(
     child: ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Column(
@@ -388,12 +456,12 @@ class TransportVisitingCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            color: const Color(0xFFF2F7F4),
+            color: palette.surface,
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.route_rounded,
-                  color: AppColors.green,
+                  color: palette.accent,
                   size: 21,
                 ),
                 const SizedBox(width: 9),
@@ -470,11 +538,11 @@ class TransportVisitingCard extends StatelessWidget {
                               ),
                               if (driver.isPhoneVerified) ...[
                                 const SizedBox(width: 5),
-                                const Tooltip(
+                                Tooltip(
                                   message: 'Verified phone',
                                   child: Icon(
                                     Icons.verified,
-                                    color: Color(0xFF147A58),
+                                    color: palette.accent,
                                     size: 21,
                                   ),
                                 ),
@@ -484,13 +552,13 @@ class TransportVisitingCard extends StatelessWidget {
                           const SizedBox(height: 8),
                           _badge(
                             driver.vehicleType.label,
-                            color: const Color(0xFFF1F5F2),
+                            color: palette.tag,
                           ),
                           const SizedBox(height: 3),
                           Text(
                             _capacityLabel,
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: const Color(0xFF176744)),
+                                ?.copyWith(color: driver.cardStyle == 'gold_elite' ? palette.tag : palette.accent),
                           ),
                         ],
                       ),
@@ -504,7 +572,7 @@ class TransportVisitingCard extends StatelessWidget {
                   children: [
                     _badge(
                       '${AppStrings.vehicleNumber}: ${driver.vehicleNumber.isEmpty ? AppStrings.numberPending : driver.vehicleNumber}',
-                      color: const Color(0xFFF1F5F2),
+                      color: palette.tag,
                     ),
                     for (final tag in driver.specializations)
                       _badge(tag, color: _specializationColor(tag)),
@@ -516,15 +584,17 @@ class TransportVisitingCard extends StatelessWidget {
                 ),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.location_on_outlined,
                       size: 18,
-                      color: Color(0xFF64736D),
+                      color: palette.ink,
                     ),
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
-                        '${driver.village.label} · ${driver.currentSpot}',
+                        driver.village.label == driver.currentSpot
+                            ? driver.village.label
+                            : '${driver.village.label} · ${driver.currentSpot}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium,
@@ -543,7 +613,7 @@ class TransportVisitingCard extends StatelessWidget {
             ),
           ),
           Container(
-            color: const Color(0xFF19332C),
+            color: driver.cardStyle == 'gold_elite' ? const Color(0xFF92400E) : palette.accent,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
             child: Row(
               children: [

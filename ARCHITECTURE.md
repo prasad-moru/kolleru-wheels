@@ -131,6 +131,7 @@ kolleru-wheels/
 │   │       └── proximity_matcher.dart
 │   ├── data/
 │   │   ├── models/
+│   │   │   ├── admin_analytics_model.dart
 │   │   │   ├── driver_model.dart
 │   │   │   ├── load_request.dart
 │   │   │   ├── load_request_model.dart
@@ -138,6 +139,7 @@ kolleru-wheels/
 │   │   │   ├── user_profile_model.dart
 │   │   │   └── vehicle_type.dart
 │   │   └── repositories/
+│   │       ├── admin_analytics_repository.dart
 │   │       ├── auth_repository.dart
 │   │       ├── load_request_repository.dart
 │   │       ├── local_driver_repository.dart
@@ -175,8 +177,10 @@ kolleru-wheels/
 │       ├── 202610060001_auth_and_telemetry.sql
 │       ├── 202610070001_profile_completion.sql
 │       ├── 202610070002_commercial_gating.sql
-│       └── 202610110001_driver_avatars.sql
+│       ├── 202610110001_driver_avatars.sql
+│       └── 202610120001_admin_role_and_analytics.sql
 ├── test/
+│   ├── admin_dashboard_test.dart
 │   ├── auth_and_telemetry_test.dart
 │   ├── driver_onboarding_test.dart
 │   ├── drawer_navigation_test.dart
@@ -216,6 +220,8 @@ kolleru-wheels/
 
 | File | Responsibility |
 | --- | --- |
+| `data/models/admin_analytics_model.dart` | Typed admin KPI, Mandal activity, masked call log, and active load feed projections with deterministic aggregation. |
+| `data/repositories/admin_analytics_repository.dart` | Admin-authorized Supabase reads for profiles, drivers, active loads, and call telemetry; refreshes use the caller's live role. |
 | `data/models/vehicle_type.dart` | Enum for `boleroPickup`, `tataAce`, `dost`, `eicher14ft`, and `tractor`, with bilingual display labels. Enum names are stored as stable identifiers. |
 | `data/models/driver_model.dart` | Directory/card projection: ID, name, phone, base village, current-spot label and optional village ID, vehicle type, display capacity, availability, demo flag, vehicle number, and specializations. |
 | `data/models/local_driver_profile.dart` | Structured persistent driver profile with numeric capacity in tons, base/current villages, spot label, JSON serialization/validation, immutable specialization list, selective `copyWith()`, and conversion to `DriverModel`. |
@@ -229,6 +235,7 @@ kolleru-wheels/
 
 | File | Responsibility |
 | --- | --- |
+| `presentation/admin/admin_dashboard_screen.dart` | Admin-only Command Hub with KPI cards, 30-second live-feed polling, Mandal activity, expiry countdowns, masked telemetry, and session logout. |
 | `presentation/common/vehicle_badge.dart` | Draws five distinctive offline vehicle silhouettes: Bolero rack/TMT rods; Tata Ace snub cab and compact bed; Dost broad bumper and medium cargo body; tall Eicher cab/railing; tractor bonnet, large rear wheel, and trailer. |
 | `presentation/common/call_button.dart` | Shared large green contact control, repeated-tap protection during launch, dialer-error handling, and demo-record notice. |
 | `presentation/common/audio_cue_button.dart` | Screen-reader announcements plus visible guidance; no standalone audio playback dependency. |
@@ -643,3 +650,31 @@ The shared Material 3 theme uses system fonts with regular/medium weights, compa
 `AuthRepository` records `last_active_timestamp` with the cached identity, refreshes it on app resume and at most once every 15 minutes during pointer interaction, and expires sessions after an injectable seven-day inactivity interval. Expiration uses the device clock, removes the app identity, signs out the Supabase SDK session, and `SessionRouter` returns to the existing Login/Register gateway. Valid sessions continue without a daily OTP. This is a client-side inactivity policy, not server-side session revocation or an authoritative security boundary.
 
 Verification adds coverage for the seven-day expiry and activity refresh and for avatar URL serialization through the driver cloud schema. `image_picker` is the only new runtime dependency for this increment.
+
+## 17. Admin Command Hub (12 October 2026)
+
+`SessionRouter` dispatches an authoritative `admin` profile directly to `AdminDashboardScreen`. Driver and shipper sessions retain their own destinations; the dashboard also refuses to render analytics without an admin profile. Every analytics refresh rechecks the live Supabase role through `AuthRepository.isLiveAdmin()`, while RLS remains the data boundary. The header provides refresh and logout; logout clears the app session and returns to the existing Login/Register gateway.
+
+`AdminAnalyticsRepository` polls `user_profiles`, `drivers`, `load_requests`, and `call_telemetry` using the authenticated user's JWT. The immutable `AdminAnalyticsModel` computes user/farmer/driver/load/call totals, groups driver and shipper village IDs into the existing four Mandals, and attributes today's calls to a profile's Mandal where the caller is registered. An active farmer is a registered shipper who called today or owns a still-live load. Recent audit entries mask caller and receiver numbers before the presentation layer receives them. The Command Hub refreshes cloud data every 30 seconds and updates load countdowns every second. This is polling, not a Supabase Realtime subscription. Admin reads include profile and contact data at the database boundary; phone values are masked in the client projection.
+
+Apply `supabase/migrations/202610120001_admin_role_and_analytics.sql` after commercial gating. It preserves the constrained `driver`/`shipper`/`admin` role set, grants admin-only select policies for profiles, drivers, loads, and telemetry, and adds analytics indexes. Client role updates remain revoked; provision an admin only through trusted SQL/service-role operations. The migration is supplied locally and has not been deployed. Tests cover admin routing, shipper isolation, metric aggregation, active-load expiry filtering, Mandal attribution, and phone masking.
+
+
+## 18. Delta Logistics card styles and dispatch presentation (12 October 2026)
+
+`DriverCardStyle` in `core/theme` owns the Delta Emerald (`classic_delta`), Aqua Marine (`aqua_marine`), and Royal Gold (`gold_elite`) palettes. Presentation resolves unknown style IDs to Delta Emerald. System fonts, regular weight headings, outdoor contrast, large contact targets, and pill chips remain shared design primitives.
+
+`LocalDriverProfile.cardStyle` persists in local JSON and adapts into `DriverModel.cardStyle`. Legacy JSON and cloud rows default to `classic_delta`. `SupabaseDriverRepository` includes `card_style` in queued upserts and reads it from directory rows; its existing select-all query includes the new column. Apply `supabase/migrations/202610120002_driver_card_style.sql` to provision the column and allowed values. This migration has not been deployed by this change.
+
+Only a driver viewing their own card can select and save a style. Writes use the local profile repository and existing Supabase offline queue; sync-pending feedback distinguishes local saves. The dashboard reloads its local profile after card editing so later availability/location sync retains the selected style. Both the directory and exported PNG reuse `TransportVisitingCard`. Contact controls stay outside the export boundary; directory calls retain telemetry and WhatsApp uses an external URL handoff.
+
+The directory pins horizontal All/mandal chips above its scrolling content. Mandal filtering uses the current spot village, falling back to the base village, while the saved village selection continues to order proximity groups. The dashboard's `LoadPoolBoard` renders dispatch tickets with route arrows, commodity pills, and minutes remaining from the repository clock. Existing minute/expiry scheduling and resume refresh govern countdowns and expired-load removal.
+
+
+## 19. Farmer directory presentation (12 October 2026)
+
+`HomeDirectoryScreen` retains its authenticated shipper gate, repository/cache fetches, village persistence, mandal filtering, and proximity ordering. Its pinned locality chips use emerald selected pills and white outlined unselected pills. Vehicle illustrations remain offline and the filter tiles use a compact 64 dp badge.
+
+`presentation/common/driver_directory_card.dart` provides the compact directory layout: white surface, subtle shadow/outline, style-specific accent strip and avatar ring, verified-phone badge, base village/mandal, explicit availability, and tonal vehicle/capacity/commodity chips. It uses the shared system typography with semibold names and Telugu fallback, without downloading fonts. The card body opens `VisitingCardScreen`; the exported `TransportVisitingCard` retains its three palette layouts. Directory Call uses the existing `CallButton` telemetry path with shipper phone/role and `directory:<driver ID>` context; WhatsApp retains the screen-owned external handoff and error recovery. Demo numbers remain protected. The contact bar splits across normal widths and stacks for narrow screens or enlarged text.
+
+`presentation/farmer/directory_states.dart` supplies skeleton shimmer during the initial fetch and an illustrated empty state that clears locality, vehicle, and saved village filters. Reduced-motion settings disable shimmer animation. Refreshes retain existing directory cards with a progress indicator. These widgets introduce no repository, storage, or state-management dependency.

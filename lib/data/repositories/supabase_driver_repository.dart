@@ -57,6 +57,7 @@ class SupabaseDriverRepository {
       'specializations': driver.specializations,
       'is_available': driver.isAvailable,
       'avatar_url': driver.avatarUrl,
+      'card_style': driver.cardStyle,
       'updated_at': now.toUtc().toIso8601String(),
     };
   }
@@ -87,6 +88,7 @@ class SupabaseDriverRepository {
       specializations: (row['specializations'] as List? ?? []).cast<String>(),
       isAvailable: row['is_available'] as bool,
       avatarUrl: row['avatar_url'] as String?,
+      cardStyle: row['card_style'] as String? ?? 'classic_delta',
       isPhoneVerified: true,
     );
   }

@@ -18,9 +18,11 @@ class LocalDriverProfile {
     String? currentSpotLabel,
     this.avatarUrl,
     this.isPhoneVerified = false,
+    this.cardStyle = 'classic_delta',
   }) : specializations = List.unmodifiable(specializations),
        currentSpotLabel = currentSpotLabel ?? currentSpotVillage.label;
 
+  final String cardStyle;
   final String id;
   final String name;
   final String phone;
@@ -36,12 +38,14 @@ class LocalDriverProfile {
   final bool isPhoneVerified;
 
   LocalDriverProfile copyWith({
+    String? cardStyle,
     bool? isAvailable,
     Village? currentSpotVillage,
     String? currentSpotLabel,
     String? avatarUrl,
     bool? isPhoneVerified,
   }) => LocalDriverProfile(
+    cardStyle: cardStyle ?? this.cardStyle,
     id: id,
     name: name,
     phone: phone,
@@ -62,6 +66,7 @@ class LocalDriverProfile {
   );
 
   DriverModel toDriverModel() => DriverModel(
+    cardStyle: cardStyle,
     id: id,
     name: name,
     phone: phone,
@@ -79,6 +84,7 @@ class LocalDriverProfile {
   );
 
   Map<String, Object?> toJson() => {
+    'cardStyle': cardStyle,
     'schemaVersion': 1,
     'id': id,
     'name': name,
@@ -108,6 +114,7 @@ class LocalDriverProfile {
       throw const FormatException('Invalid driver profile');
     }
     final profile = LocalDriverProfile(
+      cardStyle: json['cardStyle'] as String? ?? 'classic_delta',
       id: json['id'] as String,
       name: json['name'] as String,
       phone: json['phone'] as String,

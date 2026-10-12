@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
@@ -164,30 +163,28 @@ class _LoadPoolBoardState extends State<LoadPoolBoard>
           for (final request in requests)
             Card(
               key: ValueKey('load-${request.id}'),
-              color: const Color(0xFFFFF4D5),
+              color: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: AppColors.charcoal, width: 2),
+                side: const BorderSide(color: Color(0xFFD97706)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      _materialIcon(request.materialType),
-                      size: 36,
-                      color: AppColors.charcoal,
-                    ),
                     Text(
                       '${request.fromLocation} ➔ ${request.toVillage.label}',
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      '${AppStrings.material}: ${request.materialType}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      Chip(avatar: Icon(_materialIcon(request.materialType), size: 18),
+                        label: Text('${AppStrings.material}: ${request.materialType}')),
+                      Chip(avatar: const Icon(Icons.timer_outlined, size: 18),
+                        backgroundColor: const Color(0xFFFEF3C7),
+                        label: Text('${(request.expiresAt.difference(now).inSeconds / 60).ceil()} నిమి / min left')),
+                    ]),
                     if (request.vehicleTypeNeeded != null)
                       Text(request.vehicleTypeNeeded!.label),
                     Text(request.posterName),

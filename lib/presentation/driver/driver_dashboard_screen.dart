@@ -85,6 +85,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
+  Future<void> _openCard() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => VisitingCardScreen(driver: _profile.toDriverModel()),
+    ));
+    final updated = await widget.repository.getProfile();
+    if (mounted && updated != null && updated.id == _profile.id) {
+      setState(() => _profile = updated);
+    }
+  }
+
   Future<void> _chooseSpot() async {
     if (_saving) return;
     final spot = await showModalBottomSheet<DriverSpot>(
@@ -156,13 +166,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                     ),
                     onTap: () {
                       Navigator.of(context).pop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => VisitingCardScreen(
-                            driver: _profile.toDriverModel(),
-                          ),
-                        ),
-                      );
+                      _openCard();
                     },
                   ),
                   ListTile(
@@ -287,22 +291,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   key: const ValueKey('dashboard-visiting-card'),
-                  onPressed: _saving
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => VisitingCardScreen(
-                              driver: _profile.toDriverModel(),
-                            ),
-                          ),
-                        ),
+                  onPressed: _saving ? null : _openCard,
                   icon: const Icon(Icons.badge),
                   label: const Text(
                     AppStrings.digitalCard,
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 12),
                 const SizedBox(height: 16),
                 const Text(AppStrings.localProfileNote),
                 if (_syncPending)

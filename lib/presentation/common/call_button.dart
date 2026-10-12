@@ -20,6 +20,8 @@ class CallButton extends StatefulWidget {
     this.telemetryRepository,
     this.launcher,
     this.compact = false,
+    this.backgroundColor,
+    this.elevated = false,
   });
   final String phone;
   final bool isDemo;
@@ -30,6 +32,8 @@ class CallButton extends StatefulWidget {
   final TelemetryRepository? telemetryRepository;
   final Future<bool> Function(Uri)? launcher;
   final bool compact;
+  final Color? backgroundColor;
+  final bool elevated;
   @override
   State<CallButton> createState() => _CallButtonState();
 }
@@ -75,8 +79,10 @@ class _CallButtonState extends State<CallButton> {
     children: [
       FilledButton(
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.green,
+          backgroundColor: widget.backgroundColor ?? AppColors.green,
           foregroundColor: Colors.white,
+          elevation: widget.elevated ? 2 : 0,
+          shadowColor: const Color(0x33059669),
           minimumSize: Size.fromHeight(widget.compact ? 58 : 64),
           padding: EdgeInsets.symmetric(horizontal: widget.compact ? 10 : 20),
         ),

@@ -73,6 +73,18 @@ SupabaseClient clientWith(
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('Card styles round trip through cloud rows and offline queue', () async {
+    final repository = SupabaseDriverRepository(now: () => now);
+    for (final style in ['classic_delta', 'aqua_marine', 'gold_elite']) {
+      final row = SupabaseDriverRepository.toRow(driver().copyWith(cardStyle: style), now);
+      expect(row['card_style'], style);
+      expect(SupabaseDriverRepository.fromRow(row).cardStyle, style);
+      await repository.upsertDriver(driver().copyWith(cardStyle: style));
+      expect((await repository.getAvailableDrivers()).single.cardStyle, style);
+    }
+    final legacy = SupabaseDriverRepository.toRow(driver(), now)..remove('card_style');
+    expect(SupabaseDriverRepository.fromRow(legacy).cardStyle, 'classic_delta');
+  });
   test('Unconfirmed cloud writes remain pending', () async {
     final client = clientWith((request) async => jsonResponse([]));
     final repository = SupabaseDriverRepository(client: client, now: () => now);

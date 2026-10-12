@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
 import '../../core/utils/proximity_matcher.dart';
@@ -15,10 +15,11 @@ import '../../data/repositories/mock_directory_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../auth/session_router.dart';
 import '../common/audio_cue_button.dart';
-import '../common/call_button.dart';
+import '../common/driver_directory_card.dart';
 import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
 import 'post_load_bottom_sheet.dart';
+import 'directory_states.dart';
 
 class HomeDirectoryScreen extends StatefulWidget {
   const HomeDirectoryScreen({
@@ -48,6 +49,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   bool _remoteLoading = false;
   bool _cachedDrivers = false;
   String? _villageId;
+  String? _mandalId;
   VehicleType? _vehicle;
   final bool _availableOnly = true;
   bool _selectionChanged = false;
@@ -209,6 +211,83 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
   }
 
+  Future<void> _whatsapp(DriverModel driver) async {
+    final digits = driver.phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final phone = digits.length == 10 ? '91$digits' : digits;
+    try {
+      if (await launchUrl(
+        Uri.https('wa.me', '/$phone'),
+        mode: LaunchMode.externalApplication,
+      )) {
+        return;
+      }
+    } catch (_) {
+      // Report platform failures below.
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
+        ),
+      );
+    }
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _vehicle = null;
+      _mandalId = null;
+    });
+    _selectVillage(null);
+  }
+
+  Widget _mandalFilters() => Material(
+    color: Theme.of(context).scaffoldBackgroundColor,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          for (final id in <String?>[
+            null, 'kaikaluru', 'mandavalli', 'akividu', 'kalidindi',
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                key: ValueKey('mandal-${id ?? 'all'}'),
+                label: Text(
+                  id == null
+                      ? 'అన్నీ / All'
+                      : id == 'kalidindi'
+                      ? 'కలిదిండి / Kalidindi'
+                      : '${KolleruVillages.mandals.firstWhere((m) => m.id == id).teluguName} / ${KolleruVillages.mandals.firstWhere((m) => m.id == id).name}',
+                ),
+                selected: _mandalId == id,
+                showCheckmark: false,
+                backgroundColor: Colors.white,
+                selectedColor: const Color(0xFF0F5132),
+                surfaceTintColor: Colors.transparent,
+                elevation: _mandalId == id ? 2 : 0,
+                shadowColor: const Color(0x220F5132),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                labelStyle: TextStyle(
+                  color: _mandalId == id ? Colors.white : const Color(0xFF475569),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                side: BorderSide(
+                  color: _mandalId == id ? const Color(0xFF0F5132) : const Color(0xFFE2E8F0),
+                  width: 0.8,
+                ),
+                onSelected: (_) => setState(() => _mandalId = id),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     if (_auth.currentProfile?.role != 'shipper') {
@@ -226,6 +305,12 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
               availableOnly: _availableOnly,
             )),
     ];
+    drivers.removeWhere(
+      (driver) => _mandalId != null &&
+          ProximityMatcher.mandalId(
+            driver.currentSpotVillageId ?? driver.village.id,
+          ) != _mandalId,
+    );
     final headings = <String, String>{};
     if (_villageId != null) {
       final result = ProximityMatcher.match(
@@ -293,210 +378,191 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
-            Text(
-              AppStrings.directory,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const ValueKey('post-urgent-load'),
-              onPressed: _postLoad,
-              icon: const Icon(Icons.campaign, size: 28),
-              label: const Text(
-                AppStrings.urgentLoad,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_remoteLoading) const LinearProgressIndicator(),
-            Text(
-              _liveDrivers?.isNotEmpty == true
-                  ? (_cachedDrivers
-                        ? 'సేవ్ చేసిన వాహనాలు / Cached drivers'
-                        : 'లైవ్ వాహనాలు / Live drivers')
-                  : AppStrings.demo,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              key: ValueKey(_villageId),
-              initialValue: _villageId ?? '',
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: AppStrings.village),
-              items: [
-                const DropdownMenuItem(
-                  value: '',
-                  child: Text(AppStrings.allVillages),
-                ),
-                for (final mandal in KolleruVillages.mandals)
-                  for (final village in mandal.villages)
-                    DropdownMenuItem(
-                      value: village.id,
-                      child: Text(
-                        '${village.label} (${mandal.name})',
-                        overflow: TextOverflow.ellipsis,
+            _mandalFilters(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.eco_outlined, color: Color(0xFF0F5132)),
                       ),
-                    ),
-              ],
-              onChanged: (value) => _selectVillage(value == '' ? null : value),
-            ),
-            const SizedBox(height: 16),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.maxWidth >= 600
-                    ? 3
-                    : constraints.maxWidth >= 340 &&
-                          MediaQuery.textScalerOf(context).scale(18) <= 24
-                    ? 2
-                    : 1;
-                final width =
-                    (constraints.maxWidth - (columns - 1) * 12) / columns;
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    for (final type in VehicleType.values)
-                      SizedBox(
-                        width: width,
-                        child: Semantics(
-                          selected: _vehicle == type,
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: _vehicle == type
-                                  ? AppColors.green
-                                  : Colors.white,
-                              foregroundColor: _vehicle == type
-                                  ? Colors.white
-                                  : AppColors.charcoal,
-                              side: BorderSide(
-                                color: _vehicle == type
-                                    ? AppColors.green
-                                    : AppColors.charcoal,
-                              ),
-                            ),
-                            onPressed: () => setState(
-                              () => _vehicle = _vehicle == type ? null : type,
-                            ),
-                            child: Column(
-                              children: [
-                                VehicleBadge(type: type, size: 88),
-                                const SizedBox(height: 8),
-                                Text(type.label, textAlign: TextAlign.center),
-                              ],
-                            ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          AppStrings.directory,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0F172A),
                           ),
                         ),
                       ),
-                  ],
-                );
-              },
-            ),
-            TextButton(
-              onPressed: () => setState(() => _vehicle = null),
-              child: const Text(AppStrings.allVehicles),
-            ),
-            const AudioCueButton(),
-            const SizedBox(height: 20),
-            Text(
-              'డ్రైవర్లు / Drivers: ${drivers.length}',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            if (drivers.isEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text(AppStrings.noDrivers),
-              ),
-              OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _vehicle = null;
-                  });
-                  _selectVillage(null);
-                },
-                child: const Text(AppStrings.reset),
-              ),
-            ],
-            for (final driver in drivers) ...[
-              if (headings.containsKey(driver.id))
-                Container(
-                  margin: const EdgeInsets.only(top: 20, bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDFF4E8),
-                    border: Border.all(color: AppColors.charcoal, width: 2),
-                    borderRadius: BorderRadius.circular(8),
+                    ],
                   ),
-                  child: Text(
-                    headings[driver.id]!,
+                  const SizedBox(height: 8),
+                  const Text(AppStrings.directoryHint),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const ValueKey('post-urgent-load'),
+                    onPressed: _postLoad,
+                    icon: const Icon(Icons.campaign, size: 28),
+                    label: const Text(
+                      AppStrings.urgentLoad,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_remoteLoading && _liveDrivers != null)
+                    const LinearProgressIndicator(),
+                  if (!_remoteLoading || _liveDrivers != null)
+                    Text(
+                      _liveDrivers?.isNotEmpty == true
+                          ? (_cachedDrivers
+                                ? 'సేవ్ చేసిన వాహనాలు / Cached drivers'
+                                : 'లైవ్ వాహనాలు / Live drivers')
+                          : AppStrings.demo,
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(_villageId),
+                    initialValue: _villageId ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: AppStrings.village),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text(AppStrings.allVillages),
+                      ),
+                      for (final mandal in KolleruVillages.mandals)
+                        for (final village in mandal.villages)
+                          DropdownMenuItem(
+                            value: village.id,
+                            child: Text(
+                              '${village.label} (${mandal.name})',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                    ],
+                    onChanged: (value) => _selectVillage(value == '' ? null : value),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    AppStrings.chooseVehicle,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 10),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 600
+                          ? 3
+                          : constraints.maxWidth >= 340 &&
+                                MediaQuery.textScalerOf(context).scale(18) <= 24
+                          ? 2
+                          : 1;
+                      final width =
+                          (constraints.maxWidth - (columns - 1) * 12) / columns;
+                      return Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          for (final type in VehicleType.values)
+                            SizedBox(
+                              width: width,
+                              child: Semantics(
+                                selected: _vehicle == type,
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    backgroundColor: _vehicle == type
+                                        ? const Color(0xFFECFDF5)
+                                        : Colors.white,
+                                    foregroundColor: _vehicle == type
+                                        ? const Color(0xFF0F5132)
+                                        : const Color(0xFF475569),
+                                    side: BorderSide(
+                                      color: _vehicle == type
+                                          ? const Color(0xFF059669)
+                                          : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _vehicle = _vehicle == type ? null : type,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      VehicleBadge(type: type, size: 64),
+                                      const SizedBox(height: 8),
+                                      Text(type.label, textAlign: TextAlign.center),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _vehicle = null),
+                    child: const Text(AppStrings.allVehicles),
+                  ),
+                  const AudioCueButton(),
+                  const SizedBox(height: 20),
+                  Text(
+                    _remoteLoading && _liveDrivers == null
+                        ? AppStrings.loadingDrivers
+                        : 'డ్రైవర్లు / Drivers: ${drivers.length}',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
-                ),
-              Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => VisitingCardScreen(driver: driver),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        VehicleBadge(type: driver.vehicleType, size: 96),
-                        Text(
-                          driver.name,
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        Text(driver.vehicleType.label),
-                        Text(
-                          '${AppStrings.capacity}: ${driver.capacity}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            for (final tag in driver.specializations)
-                              Chip(
-                                label: Text(tag),
-                                backgroundColor: const Color(0xFFFFF1BF),
-                              ),
-                          ],
-                        ),
-                        Text(driver.village.label),
-                        Text(
-                          '${AppStrings.currentSpot}: ${driver.currentSpot}',
-                        ),
-                        const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  if (_remoteLoading && _liveDrivers == null)
+                    const DirectoryLoadingState()
+                  else if (drivers.isEmpty)
+                    DirectoryEmptyState(onReset: _resetFilters),
+                  if (!_remoteLoading || _liveDrivers != null)
+                    for (final driver in drivers) ...[
+                      if (headings.containsKey(driver.id))
                         Container(
-                          padding: const EdgeInsets.all(8),
-                          color: driver.isAvailable
-                              ? const Color(0xFFDFF4E8)
-                              : AppColors.amber,
-                          child: Text(
-                            driver.isAvailable
-                                ? AppStrings.available
-                                : AppStrings.busy,
-                            style: const TextStyle(
-                              color: AppColors.charcoal,
-                              fontWeight: FontWeight.bold,
+                          margin: const EdgeInsets.only(top: 20, bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDFF4E8),
+                            border: Border.all(
+                              color: const Color(0xFFD1FAE5),
+                              width: 0.5,
                             ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            headings[driver.id]!,
+                            style: Theme.of(context).textTheme.titleLarge,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(AppStrings.visitingCard),
-                        const SizedBox(height: 12),
-                        CallButton(phone: driver.phone, isDemo: driver.isDemo),
-                      ],
-                    ),
-                  ),
-                ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: DriverDirectoryCard(
+                          key: ValueKey('directory-driver-${driver.id}'),
+                          driver: driver,
+                          callerPhone: _auth.currentProfile?.phone,
+                          onOpen: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => VisitingCardScreen(driver: driver),
+                            ),
+                          ),
+                          onWhatsApp: () => _whatsapp(driver),
+                        ),
+                      ),
+                    ],
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),

@@ -18,7 +18,9 @@ class DriverModel {
     this.capacityTons,
     this.avatarUrl,
     this.isPhoneVerified = false,
+    this.cardStyle = 'classic_delta',
   });
+  final String cardStyle;
   final String id;
   final String name;
   final String phone;
@@ -34,4 +36,22 @@ class DriverModel {
   final double? capacityTons;
   final String? avatarUrl;
   final bool isPhoneVerified;
+  DriverModel copyWith({String? cardStyle, String? avatarUrl}) => DriverModel(
+    id: id,
+    name: name,
+    phone: phone,
+    village: village,
+    currentSpot: currentSpot,
+    vehicleType: vehicleType,
+    capacity: capacity,
+    isAvailable: isAvailable,
+    isDemo: isDemo,
+    vehicleNumber: vehicleNumber,
+    specializations: specializations,
+    currentSpotVillageId: currentSpotVillageId,
+    capacityTons: capacityTons,
+    avatarUrl: avatarUrl ?? this.avatarUrl,
+    isPhoneVerified: isPhoneVerified,
+    cardStyle: cardStyle ?? this.cardStyle,
+  );
 }

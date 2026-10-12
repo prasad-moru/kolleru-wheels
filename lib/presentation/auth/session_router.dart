@@ -2,13 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/repositories/admin_analytics_repository.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../admin/admin_dashboard_screen.dart';
 import 'phone_otp_screen.dart';
 import 'role_destination.dart';
 
 class SessionRouter extends StatefulWidget {
-  const SessionRouter({super.key, this.repository});
+  const SessionRouter({
+    super.key,
+    this.repository,
+    this.adminAnalyticsRepository,
+  });
   final AuthRepository? repository;
+  final AdminAnalyticsRepository? adminAnalyticsRepository;
   @override
   State<SessionRouter> createState() => _SessionRouterState();
 }
@@ -55,7 +62,12 @@ class _SessionRouterState extends State<SessionRouter>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final profile = _auth.currentProfile;
-    final destination = profile != null
+    final destination = profile?.role == 'admin'
+        ? AdminDashboardScreen(
+            authRepository: _auth,
+            analyticsRepository: widget.adminAnalyticsRepository,
+          )
+        : profile != null
         ? RoleDestination(profile: profile, authRepository: _auth)
         : PhoneOtpScreen(repository: _auth, onVerified: (_) => _changed());
     return Listener(

@@ -57,7 +57,11 @@ class _DriverAvatarPickerState extends State<DriverAvatarPicker> {
   }
 
   String get _initials {
-    final parts = widget.name.trim().split(RegExp(r'\s+'));
+    final parts = widget.name
+        .split('/')
+        .first
+        .trim()
+        .split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty) return 'KW';
     return parts.take(2).map((part) => part.characters.first).join();
   }
