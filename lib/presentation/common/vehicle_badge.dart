@@ -5,14 +5,20 @@ import '../../data/models/vehicle_type.dart';
 
 /// Offline vector illustrations with distinct silhouettes, not just colors.
 class VehicleBadge extends StatelessWidget {
-  const VehicleBadge({super.key, required this.type, this.size = 88});
+  const VehicleBadge({
+    super.key,
+    required this.type,
+    this.size = 88,
+    this.semanticLabel,
+  });
   final VehicleType type;
   final double size;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) => Semantics(
     image: true,
-    label: type.label,
+    label: semanticLabel ?? type.label,
     child: SizedBox.square(
       dimension: size,
       child: CustomPaint(painter: _VehiclePainter(type)),

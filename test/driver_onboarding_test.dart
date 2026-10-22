@@ -57,7 +57,10 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
 
 void main() {
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'has_seen_welcome': true,
+      'selected_language': 'english',
+    });
     AuthRepository.instance.currentProfile = const UserProfile(
       phone: '+919876543210',
       role: 'driver',
@@ -128,6 +131,8 @@ void main() {
     'Corrupt profile surfaces an error and preserves original data',
     () async {
       SharedPreferences.setMockInitialValues({
+        'has_seen_welcome': true,
+        'selected_language': 'english',
         LocalDriverRepository.profileKey: '{broken json',
       });
       await expectLater(
@@ -170,7 +175,7 @@ void main() {
       await chooseCluster(tester);
       await tapVisible(
         tester,
-        find.widgetWithText(FilterChip, AppStrings.specializationOptions[2]),
+        find.byKey(const ValueKey('driver-specialization-2')),
       );
       await tapVisible(tester, find.byKey(const ValueKey('register-driver')));
       for (final error in [
@@ -236,9 +241,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tapVisible(tester, find.byKey(const ValueKey('register-driver')));
-    expect(find.text(AppStrings.nameRequired), findsOneWidget);
-    expect(find.text(AppStrings.phoneInvalid), findsOneWidget);
-    expect(find.text(AppStrings.villageRequired), findsOneWidget);
+    expect(find.text('Enter your full name'), findsOneWidget);
+    expect(find.text('Enter a valid 10-digit mobile number'), findsOneWidget);
+    expect(find.text('Select your village'), findsOneWidget);
     expect(await LocalDriverRepository().getProfile(), isNull);
   });
 
@@ -327,6 +332,8 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
+      'has_seen_welcome': true,
+      'selected_language': 'english',
       LocalDriverRepository.profileKey: '{broken',
     });
     await tester.pumpWidget(
@@ -336,9 +343,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.loadFailed), findsOneWidget);
+    expect(find.text('Could not load profile'), findsOneWidget);
     await LocalDriverRepository().saveProfile(profile());
-    await tester.tap(find.text(AppStrings.retry));
+    await tester.tap(find.byKey(const ValueKey('retry-driver-profile')));
     await tester.pumpAndSettle();
     expect(find.byType(DriverDashboardScreen), findsOneWidget);
     expect(tester.takeException(), isNull);

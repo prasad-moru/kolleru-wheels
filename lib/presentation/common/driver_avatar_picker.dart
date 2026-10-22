@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/localization/app_language_provider.dart';
 
 /// Shared avatar display and compressed gallery picker for driver journeys.
 class DriverAvatarPicker extends StatefulWidget {
@@ -13,6 +14,7 @@ class DriverAvatarPicker extends StatefulWidget {
     this.size = 88,
     this.editable = true,
     this.onPhotoSelected,
+    this.language,
   });
 
   final String name;
@@ -21,6 +23,7 @@ class DriverAvatarPicker extends StatefulWidget {
   final double size;
   final bool editable;
   final ValueChanged<Uint8List>? onPhotoSelected;
+  final AppLanguageProvider? language;
 
   @override
   State<DriverAvatarPicker> createState() => _DriverAvatarPickerState();
@@ -46,8 +49,10 @@ class _DriverAvatarPickerState extends State<DriverAvatarPicker> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ఫోటో తెరవలేకపోయాం / Could not open photo'),
+          SnackBar(
+            content: Text(widget.language?.tr(
+              te: 'ఫోటో తెరవలేకపోయాం', en: 'Could not open photo',
+            ) ?? 'ఫోటో తెరవలేకపోయాం / Could not open photo'),
           ),
         );
       }
@@ -125,7 +130,10 @@ class _DriverAvatarPickerState extends State<DriverAvatarPicker> {
     if (!widget.editable) return avatar;
     return Semantics(
       button: true,
-      label: 'Driver photo. Tap to choose a photo',
+      label: widget.language?.tr(
+        te: 'డ్రైవర్ ఫోటో. ఎంచుకోవడానికి తాకండి',
+        en: 'Driver photo. Tap to choose a photo',
+      ) ?? 'Driver photo. Tap to choose a photo',
       child: GestureDetector(
         key: const ValueKey('driver-avatar-picker'),
         onTap: _picking ? null : _pickPhoto,

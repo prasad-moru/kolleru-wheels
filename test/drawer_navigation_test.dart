@@ -36,7 +36,10 @@ class GatewayFailureAuth extends AuthRepository {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() => SharedPreferences.setMockInitialValues({
+    'has_seen_welcome': true,
+    'selected_language': 'english',
+  }));
   testWidgets('Farmer drawer has only own profile, posted loads and logout', (
     tester,
   ) async {
@@ -116,7 +119,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets(
-    'Invalid phone never requests SMS; Auth 400 shows the Telugu snackbar',
+    'Invalid phone never requests SMS; Auth 400 shows a localized snackbar',
     (tester) async {
       final auth = GatewayFailureAuth();
       await tester.pumpWidget(
@@ -145,7 +148,7 @@ void main() {
         find.descendant(
           of: find.byType(SnackBar),
           matching: find.text(
-            'SMS పంపడం విఫలమైంది. దయచేసి సరైన నెంబర్ సరిచూడండి లేదా టెస్ట్ నెంబర్ వాడండి.',
+            'Could not send SMS. Check your number and try again.',
           ),
         ),
         findsOneWidget,

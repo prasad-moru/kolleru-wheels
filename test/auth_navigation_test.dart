@@ -62,7 +62,10 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() => SharedPreferences.setMockInitialValues({
+    'has_seen_welcome': true,
+    'selected_language': 'english',
+  }));
 
   testWidgets('A new device restores the busy driver and opens the dashboard', (tester) async {
     final drivers = OwnedDrivers();
@@ -91,10 +94,14 @@ void main() {
       authRepository: auth, repository: LocalDriverRepository(),
     )));
     await tester.pumpAndSettle();
-    expect(find.text(AppStrings.loadFailed), findsOneWidget);
+    expect(find.text('Could not load profile'), findsOneWidget);
     expect(find.byType(DriverRegistrationScreen), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('language-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('ప్రొఫైల్ తెరవలేదు'), findsOneWidget);
+    expect(find.textContaining(' / '), findsNothing);
     drivers.fail = false;
-    await tapVisible(tester, find.text(AppStrings.retry));
+    await tapVisible(tester, find.byKey(const ValueKey('retry-driver-profile')));
     expect(find.byType(DriverDashboardScreen), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

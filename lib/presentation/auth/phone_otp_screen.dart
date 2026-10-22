@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,13 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/villages.dart';
-import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/models/user_profile_model.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/auth_repository.dart';
-import '../common/mandal_village_picker.dart';
 import '../common/driver_avatar_picker.dart';
+import '../common/language_switch_button.dart';
+import '../common/mandal_village_picker.dart';
 import 'onboarding_navigation.dart';
 import 'session_router.dart';
 
@@ -24,7 +24,7 @@ class PhoneOtpScreen extends StatefulWidget {
   State<PhoneOtpScreen> createState() => _PhoneOtpScreenState();
 }
 
-class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
+class _PhoneOtpScreenState extends LanguageAwareState<PhoneOtpScreen> {
   late final _auth = widget.repository ?? AuthRepository.instance;
   final _phone = TextEditingController();
   final _otp = TextEditingController();
@@ -43,7 +43,13 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
   bool _busy = false;
   int _seconds = 0;
   Timer? _timer;
-  String? _error;
+  ({String te, String en})? _error;
+  bool _validated = false;
+
+  @override
+  void onLanguageChanged() {
+    if (_validated && !_sent) _form.currentState?.validate();
+  }
 
   @override
   void initState() {
@@ -57,7 +63,11 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
   }
 
   Future<void> _send() async {
-    if (_busy || (!_sent && !_form.currentState!.validate())) return;
+    if (_busy) return;
+    if (!_sent) {
+      _validated = true;
+      if (!_form.currentState!.validate()) return;
+    }
     FocusScope.of(context).unfocus();
     if (_register && _verifiedPhone != null) {
       await _completeRegistration();
@@ -89,19 +99,26 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
       });
     } catch (_) {
       _showError(
-        'SMS పంపడం విఫలమైంది. దయచేసి సరైన నెంబర్ సరిచూడండి లేదా టెస్ట్ నెంబర్ వాడండి.',
+        te: 'SMS పంపడం విఫలమైంది. నంబర్ సరిచూసి మళ్లీ ప్రయత్నించండి.',
+        en: 'Could not send SMS. Check your number and try again.',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showError(String message) {
+  void _showError({required String te, required String en}) {
     if (!mounted) return;
-    setState(() => _error = message);
+    setState(() => _error = (te: te, en: en));
+    final errorLanguage = language;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(
+        content: AnimatedBuilder(
+          animation: errorLanguage,
+          builder: (_, _) => Text(errorLanguage.tr(te: te, en: en)),
+        ),
+      ));
   }
 
   Future<void> _completeRegistration() async {
@@ -148,14 +165,15 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text('నమోదు విజయవంతమైంది! / Registration Successful!'),
+          SnackBar(
+            content: Text(tr(te: 'నమోదు విజయవంతమైంది!', en: 'Registration Successful!')),
           ),
         );
       widget.onVerified(profile);
     } catch (_) {
       _showError(
-        'నమోదు సేవ్ కాలేదు. మళ్లీ ప్రయత్నించండి / Could not save registration. Please retry.',
+        te: 'నమోదు సేవ్ కాలేదు. మళ్లీ ప్రయత్నించండి.',
+        en: 'Could not save registration. Please retry.',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -204,11 +222,15 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
           _otp.clear();
         });
         _showError(
-          'ఖాతా కనుగొనబడలేదు. దయచేసి నమోదు చేసుకోండి (Account not found. Please register)',
+          te: 'ఖాతా కనుగొనబడలేదు. దయచేసి నమోదు చేసుకోండి.',
+          en: 'Account not found. Please register.',
         );
       }
     } catch (_) {
-      _showError('OTP సరికాదు / Verification failed. Check code or resend.');
+      _showError(
+        te: 'OTP సరికాదు. కోడ్ సరిచూడండి లేదా మళ్లీ పంపండి.',
+        en: 'Verification failed. Check code or resend.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -232,13 +254,13 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
         child: const Icon(Icons.local_shipping_outlined, size: 30, color: Color(0xFF0F5132)),
       ),
       const SizedBox(height: 14),
-      Text('కొల్లేరు వీల్స్ / Kolleru Wheels',
+      Text(tr(te: 'కొల్లేరు వీల్స్', en: 'Kolleru Wheels'),
         key: const ValueKey('login-hero'),
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
           color: const Color(0xFF0F5132), fontWeight: FontWeight.w600,
         )),
       const SizedBox(height: 8),
-      const Text(AppStrings.loginSubtitle),
+      Text(tr(te: 'మన ఊరి వాహనాలు, నేరుగా పరిచయాలు', en: 'Local vehicles. Direct connections.')),
       const SizedBox(height: 24),
     ],
   );
@@ -258,10 +280,11 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
     onExit: _leave,
     child: Scaffold(
       appBar: AppBar(
-        title: Text(_register ? 'నమోదు / Register' : AppStrings.signIn),
+        actions: [LanguageSwitchButton(language: language, enabled: !_busy)],
+        title: Text(_register ? tr(te: 'నమోదు', en: 'Register') : tr(te: 'లాగిన్', en: 'Sign in')),
         leading: IconButton(
           key: const ValueKey('onboarding-back'),
-          tooltip: AppStrings.cancelRegistration,
+          tooltip: tr(te: 'రద్దు చేయండి', en: 'Cancel'),
           onPressed: _busy ? null : _leave,
           icon: const Icon(Icons.arrow_back),
         ),
@@ -277,7 +300,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
             side: const BorderSide(color: Color(0xFFA7F3D0)),
           ),
           icon: const Icon(Icons.agriculture_outlined),
-          label: const Text(AppStrings.browseGuest, textAlign: TextAlign.center),
+          label: Text(tr(te: 'లాగిన్ లేకుండా చూడండి', en: 'Browse as guest'), textAlign: TextAlign.center),
         ),
       ),
       body: SafeArea(
@@ -312,7 +335,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                             color: _register == register ? Colors.white : const Color(0xFF475569),
                           ),
                           label: Text(
-                            register ? 'కొత్త నమోదు (Register)' : 'లాగిన్ (Login)',
+                            register ? tr(te: 'కొత్త నమోదు', en: 'Register') : tr(te: 'లాగిన్', en: 'Login'),
                             key: ValueKey(register ? 'register-tab' : 'login-tab'),
                           ),
                           onSelected: _busy || _sent
@@ -326,7 +349,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                   ),
                   const SizedBox(height: 20),
                   if (_auth.isMock)
-                    const Text('డెమో / Demo sign-in: use OTP 123456. No SMS is sent.'),
+                    Text(tr(te: 'డెమో కోసం OTP 123456 వాడండి. SMS పంపబడదు.', en: 'Demo sign-in: use OTP 123456. No SMS is sent.')),
                   if (!_sent) Form(
                     key: _form,
                     child: Column(
@@ -336,13 +359,13 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                             key: const ValueKey('auth-name'),
                             controller: _name,
                             enabled: !_sent && !_busy,
-                            decoration: const InputDecoration(
-                              labelText: 'పూర్తి పేరు / Full Name',
+                            decoration: InputDecoration(
+                              labelText: tr(te: 'పూర్తి పేరు', en: 'Full name'),
                             ),
                             validator: (value) =>
                                 (value ?? '').trim().length < 2 ||
                                     (value ?? '').trim().length > 80
-                                ? 'పేరు ఇవ్వండి / Enter a name (2–80 characters)'
+                                ? tr(te: 'పేరు ఇవ్వండి (2–80 అక్షరాలు)', en: 'Enter a name (2–80 characters)')
                                 : null,
                           ),
                         const SizedBox(height: 16),
@@ -386,14 +409,14 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                 )),
                               ),
                             ),
-                            labelText: 'ఫోన్ నంబర్ / Phone number',
+                            labelText: tr(te: 'ఫోన్ నంబర్', en: 'Phone number'),
                           ),
                           validator: (value) {
                             try {
                               AuthRepository.normalizePhone(value ?? '');
                               return null;
                             } on FormatException {
-                              return 'సరైన 10 అంకెల మొబైల్ నెంబర్ ఇవ్వండి / Enter a valid 10-digit Indian mobile number';
+                              return tr(te: 'సరైన 10 అంకెల మొబైల్ నెంబర్ ఇవ్వండి', en: 'Enter a valid 10-digit Indian mobile number');
                             }
                           },
                         ),
@@ -403,15 +426,15 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                             child: Column(
                               children: [
                                 const SizedBox(height: 16),
-                                const Text('పాత్ర ఎంపిక / Select Role'),
+                                Text(tr(te: 'మీ పాత్ర ఎంచుకోండి', en: 'Select your role')),
                                 Wrap(
                                   spacing: 8,
                                   runSpacing: 8,
                                   children: [
                                     ChoiceChip(
                                       key: const ValueKey('auth-shipper'),
-                                      label: const Text(
-                                        'రైతు / వ్యాపారి (Farmer / Shipper)',
+                                      label: Text(
+                                        tr(te: 'రైతు లేదా వ్యాపారి', en: 'Farmer or shipper'),
                                       ),
                                       selected: _role == 'shipper',
                                       onSelected: (_) =>
@@ -419,8 +442,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                     ),
                                     ChoiceChip(
                                       key: const ValueKey('auth-driver'),
-                                      label: const Text(
-                                        'డ్రైవర్ / వాహనదారుడు (Driver / Vehicle Owner)',
+                                      label: Text(
+                                        tr(te: 'డ్రైవర్ లేదా వాహనదారుడు', en: 'Driver or vehicle owner'),
                                       ),
                                       selected: _role == 'driver',
                                       onSelected: (_) =>
@@ -430,12 +453,14 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 MandalVillagePicker(
+                                  language: language,
                                   onChanged: (id) => setState(() => _villageId = id),
                                 ),
                                 if (_role == 'driver') ...[
                                   const SizedBox(height: 20),
                                   Center(
                                     child: DriverAvatarPicker(
+                                      language: language,
                                       name: _name.text,
                                       initialBytes: _avatarBytes,
                                       onPhotoSelected: (bytes) =>
@@ -447,14 +472,14 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                     key: const ValueKey('auth-vehicle'),
                                     initialValue: _vehicle,
                                     isExpanded: true,
-                                    decoration: const InputDecoration(
-                                      labelText: 'వాహనం / Vehicle Type',
+                                    decoration: InputDecoration(
+                                      labelText: tr(te: 'వాహనం రకం', en: 'Vehicle type'),
                                     ),
                                     items: [
                                       for (final type in VehicleType.values)
                                         DropdownMenuItem(
                                           value: type,
-                                          child: Text(type.label),
+                                          child: Text(tr(te: type.teluguName, en: type.englishName)),
                                         ),
                                     ],
                                     onChanged: (type) =>
@@ -464,11 +489,11 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                   TextFormField(
                                     key: const ValueKey('auth-number'),
                                     controller: _number,
-                                    decoration: const InputDecoration(
-                                      labelText: 'వాహనం నెంబర్ / Registration Number',
+                                    decoration: InputDecoration(
+                                      labelText: tr(te: 'వాహనం నెంబర్', en: 'Registration number'),
                                     ),
                                     validator: (value) => (value ?? '').trim().isEmpty
-                                        ? 'వాహనం నెంబర్ ఇవ్వండి / Enter registration number'
+                                        ? tr(te: 'వాహనం నెంబర్ ఇవ్వండి', en: 'Enter registration number')
                                         : null,
                                   ),
                                   const SizedBox(height: 16),
@@ -478,8 +503,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                     keyboardType: const TextInputType.numberWithOptions(
                                       decimal: true,
                                     ),
-                                    decoration: const InputDecoration(
-                                      labelText: 'సామర్థ్యం / Capacity (Tons)',
+                                    decoration: InputDecoration(
+                                      labelText: tr(te: 'సామర్థ్యం (టన్నులు)', en: 'Capacity (tons)'),
                                     ),
                                     validator: (value) {
                                       final tons = double.tryParse(value ?? '');
@@ -487,7 +512,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                                               !tons.isFinite ||
                                               tons <= 0 ||
                                               tons > 100
-                                          ? 'సరైన టన్నులు ఇవ్వండి / Enter capacity (0–100 tons)'
+                                          ? tr(te: 'సరైన టన్నులు ఇవ్వండి (0–100)', en: 'Enter capacity (0–100 tons)')
                                           : null;
                                     },
                                   ),
@@ -500,7 +525,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                   ),
                   const SizedBox(height: 24),
                   if (_sent) ...[
-                    Text('OTP పంపబడింది / Code sent to +91${_phone.text}'),
+                    Text(tr(te: 'OTP పంపబడింది: +91${_phone.text}', en: 'Code sent to +91${_phone.text}')),
                     TextField(
                       key: const ValueKey('auth-otp'),
                       controller: _otp,
@@ -510,8 +535,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                         FilteringTextInputFormatter.digitsOnly,
                         LengthLimitingTextInputFormatter(6),
                       ],
-                      decoration: const InputDecoration(
-                        labelText: '6 అంకెల OTP / 6-digit OTP',
+                      decoration: InputDecoration(
+                        labelText: tr(te: '6 అంకెల OTP', en: '6-digit OTP'),
                       ),
                     ),
                     FilledButton(
@@ -520,8 +545,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                       onPressed: _busy ? null : _verify,
                       child: Text(
                         _verifiedPhone != null
-                            ? 'మళ్లీ ప్రయత్నించండి / Retry Registration'
-                            : 'లాగిన్ / Verify OTP',
+                            ? tr(te: 'నమోదు మళ్లీ ప్రయత్నించండి', en: 'Retry registration')
+                            : tr(te: 'లాగిన్', en: 'Verify OTP'),
                       ),
                     ),
                     TextButton(
@@ -530,8 +555,8 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                           : _send,
                       child: Text(
                         _seconds > 0
-                            ? 'మళ్లీ పంపండి / Resend in ${_seconds}s'
-                            : 'మళ్లీ పంపండి / Resend OTP',
+                            ? tr(te: '$_seconds సెకన్లలో మళ్లీ పంపండి', en: 'Resend in ${_seconds}s')
+                            : tr(te: 'OTP మళ్లీ పంపండి', en: 'Resend OTP'),
                       ),
                     ),
                   ] else
@@ -541,10 +566,10 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                       onPressed: _busy ? null : _send,
                       child: Text(
                         !_register
-                            ? 'OTP పంపండి / Send OTP'
+                            ? tr(te: 'OTP పంపండి', en: 'Send OTP')
                             : _verifiedPhone != null
-                            ? 'నమోదు పూర్తి చేయండి / Complete Registration'
-                            : 'నమోదు పూర్తి చేయండి / Register & Send OTP',
+                            ? tr(te: 'నమోదు పూర్తి చేయండి', en: 'Complete registration')
+                            : tr(te: 'నమోదు చేసి OTP పంపండి', en: 'Register & send OTP'),
                       ),
                     ),
                   if (_register) ...[
@@ -552,18 +577,21 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
                     TextButton(
                       key: const ValueKey('cancel-onboarding'),
                       onPressed: _busy ? null : _leave,
-                      child: const Text(AppStrings.cancelRegistration, textAlign: TextAlign.center),
+                      child: Text(tr(te: 'రద్దు చేయండి', en: 'Cancel'), textAlign: TextAlign.center),
                     ),
                   ],
                   if (_busy) const LinearProgressIndicator(),
                   if (_error != null)
-                    Text(_error!, style: const TextStyle(color: Color(0xFFD9383A))),
+                    Text(
+                      tr(te: _error!.te, en: _error!.en),
+                      style: const TextStyle(color: Color(0xFFD9383A)),
+                    ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'కాల్ ట్యాప్‌లు నమోదు చేస్తాము; కాల్ ఆడియో రికార్డు చేయము. / Call taps are logged; call audio is never recorded.',
+            Text(
+              tr(te: 'కాల్ ట్యాప్‌లు నమోదు చేస్తాము. కాల్ ఆడియో రికార్డు చేయము.', en: 'Call taps are logged; call audio is never recorded.'),
             ),
           ],
         ),

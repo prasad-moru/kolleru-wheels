@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/villages.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 
 class MandalVillagePicker extends StatefulWidget {
   const MandalVillagePicker({
     super.key,
     required this.onChanged,
     this.initialVillageId,
+    this.language,
   });
   final ValueChanged<String?> onChanged;
   final String? initialVillageId;
+  final AppLanguageProvider? language;
   @override
   State<MandalVillagePicker> createState() => _MandalVillagePickerState();
 }
@@ -42,15 +45,21 @@ class _MandalVillagePickerState extends State<MandalVillagePicker> {
           key: const ValueKey('mandal-picker'),
           initialValue: _mandal,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'మండలం / Mandal'),
+          decoration: InputDecoration(labelText: widget.language?.tr(
+            te: 'మండలం', en: 'Mandal',
+          ) ?? 'మండలం / Mandal'),
           validator: (value) =>
-              value == null ? 'మండలం ఎంచుకోండి / Choose a mandal' : null,
+              value == null ? (widget.language?.tr(
+                te: 'మండలం ఎంచుకోండి', en: 'Choose a mandal',
+              ) ?? 'మండలం ఎంచుకోండి / Choose a mandal') : null,
           items: [
             for (final mandal in KolleruVillages.mandals)
               DropdownMenuItem(
+                key: ValueKey('mandal-option-${mandal.id}'),
                 value: mandal.id,
                 child: Text(
-                  '${mandal.teluguName} / ${mandal.name}',
+                  widget.language?.tr(te: mandal.teluguName, en: mandal.name) ??
+                      '${mandal.teluguName} / ${mandal.name}',
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -68,14 +77,20 @@ class _MandalVillagePickerState extends State<MandalVillagePicker> {
           key: ValueKey('village-picker-$_mandal'),
           initialValue: _village,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'గ్రామం / Village'),
+          decoration: InputDecoration(labelText: widget.language?.tr(
+            te: 'గ్రామం', en: 'Village',
+          ) ?? 'గ్రామం / Village'),
           validator: (value) =>
-              value == null ? AppStrings.villageRequired : null,
+              value == null ? (widget.language?.label(AppStrings.villageRequired) ??
+                  AppStrings.villageRequired) : null,
           items: [
             for (final village in villages)
               DropdownMenuItem(
+                key: ValueKey('village-option-${village.id}'),
                 value: village.id,
-                child: Text(village.label, overflow: TextOverflow.ellipsis),
+                child: Text(widget.language?.tr(
+                  te: village.teluguName, en: village.name,
+                ) ?? village.label, overflow: TextOverflow.ellipsis),
               ),
           ],
           onChanged: _mandal == null

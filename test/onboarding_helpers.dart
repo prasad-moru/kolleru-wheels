@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kolleru_wheels/core/constants/villages.dart';
 
 Future<void> revealInVerticalList(
   WidgetTester tester,
@@ -43,18 +42,17 @@ Future<void> chooseCluster(
   String mandalId = 'mandavalli',
   String villageId = 'pulaparru',
 }) async {
-  final mandal = KolleruVillages.mandals.firstWhere((m) => m.id == mandalId);
   final mandalPicker = find.byKey(const ValueKey('mandal-picker'));
   await revealInVerticalList(tester, mandalPicker);
   await tester.tap(mandalPicker);
   await tester.pumpAndSettle();
-  await tester.tap(find.text('${mandal.teluguName} / ${mandal.name}').last);
+  await tester.tap(find.byKey(ValueKey('mandal-option-$mandalId')).last);
   await tester.pumpAndSettle();
   final picker = find.byKey(ValueKey('village-picker-$mandalId'));
   await revealInVerticalList(tester, picker);
   await tester.tap(picker);
   await tester.pumpAndSettle();
-  final village = find.text(KolleruVillages.find(villageId)!.label);
+  final village = find.byKey(ValueKey('village-option-$villageId'));
   await tester.scrollUntilVisible(
     village,
     150,

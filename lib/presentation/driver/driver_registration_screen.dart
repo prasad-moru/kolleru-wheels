@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/villages.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/models/vehicle_type.dart';
 import '../../data/repositories/local_driver_repository.dart';
@@ -14,6 +13,7 @@ import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../common/vehicle_badge.dart';
 import '../common/driver_avatar_picker.dart';
+import '../common/language_switch_button.dart';
 import '../common/mandal_village_picker.dart';
 import '../auth/role_destination.dart';
 import '../auth/onboarding_navigation.dart';
@@ -44,7 +44,8 @@ class DriverRegistrationScreen extends StatefulWidget {
       _DriverRegistrationScreenState();
 }
 
-class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
+class _DriverRegistrationScreenState
+    extends LanguageAwareState<DriverRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _phone = TextEditingController();
@@ -55,7 +56,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   VehicleType _vehicle = VehicleType.boleroPickup;
   String? _villageId;
   bool _saving = false;
+  bool _validated = false;
   final _driverId = const Uuid().v4();
+
+  @override
+  void onLanguageChanged() {
+    if (_validated) _formKey.currentState?.validate();
+  }
 
   @override
   void initState() {
@@ -84,7 +91,9 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   }
 
   Future<void> _register() async {
-    if (_saving || !_formKey.currentState!.validate()) return;
+    if (_saving) return;
+    _validated = true;
+    if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
     final village = KolleruVillages.find(_villageId)!;
@@ -148,7 +157,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text(AppStrings.saveFailed)));
+            .showSnackBar(SnackBar(content: Text(language.label(AppStrings.saveFailed))));
       }
     }
   }
@@ -164,10 +173,11 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     onExit: _leave,
     child: Scaffold(
       appBar: AppBar(
-        title: const Text(AppStrings.registration),
+        actions: [LanguageSwitchButton(language: language, enabled: !_saving)],
+        title: Text(language.label(AppStrings.registration)),
         leading: IconButton(
           key: const ValueKey('onboarding-back'),
-          tooltip: AppStrings.cancelRegistration,
+          tooltip: tr(te: 'రద్దు చేయండి', en: 'Cancel'),
           onPressed: _saving ? null : _leave,
           icon: const Icon(Icons.arrow_back),
         ),
@@ -182,10 +192,11 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(AppStrings.localProfileNote),
+                  Text(language.label(AppStrings.localProfileNote)),
                   const SizedBox(height: 20),
                   Center(
                     child: DriverAvatarPicker(
+                      language: language,
                       name: _name.text,
                       initialBytes: _avatarBytes,
                       onPhotoSelected: (bytes) =>
@@ -196,13 +207,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                   TextFormField(
                     key: const ValueKey('driver-name'),
                     controller: _name,
-                    decoration: const InputDecoration(
-                      labelText: AppStrings.fullName,
+                    decoration: InputDecoration(
+                      labelText: language.label(AppStrings.fullName),
                     ),
                     textCapitalization: TextCapitalization.words,
                     autofillHints: const [AutofillHints.name],
                     validator: (value) => (value?.trim().length ?? 0) < 2
-                        ? AppStrings.nameRequired
+                        ? language.label(AppStrings.nameRequired)
                         : null,
                   ),
                   const SizedBox(height: 16),
@@ -215,23 +226,23 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
                     ],
-                    decoration: const InputDecoration(
-                      labelText: AppStrings.mobile,
-                      hintText: '9876543210 / +91 9876543210',
+                    decoration: InputDecoration(
+                      labelText: language.label(AppStrings.mobile),
+                      hintText: '9876543210',
                     ),
                     validator: (value) =>
                         RegExp(r'^[6-9][0-9]{9}$')
                             .hasMatch(_mobileDigits(value ?? ''))
                         ? null
-                        : AppStrings.phoneInvalid,
+                        : language.label(AppStrings.phoneInvalid),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     key: const ValueKey('driver-vehicle-number'),
                     controller: _number,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: AppStrings.vehicleNumber,
+                    decoration: InputDecoration(
+                      labelText: language.label(AppStrings.vehicleNumber),
                       hintText: 'AP 39 AB 1234',
                     ),
                     validator: (value) =>
@@ -243,7 +254,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                               ),
                             )
                         ? null
-                        : AppStrings.numberInvalid,
+                        : language.label(AppStrings.numberInvalid),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -255,8 +266,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                     ],
-                    decoration: const InputDecoration(
-                      labelText: AppStrings.capacityTons,
+                    decoration: InputDecoration(
+                      labelText: language.label(AppStrings.capacityTons),
                       hintText: '1.5',
                     ),
                     validator: (value) {
@@ -265,13 +276,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                               !capacity.isFinite ||
                               capacity <= 0 ||
                               capacity > 100
-                          ? AppStrings.capacityInvalid
+                          ? language.label(AppStrings.capacityInvalid)
                           : null;
                     },
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    AppStrings.vehicleType,
+                    language.label(AppStrings.vehicleType),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
@@ -306,10 +317,16 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                                       setState(() => _vehicle = type),
                                   child: Column(
                                     children: [
-                                      VehicleBadge(type: type),
+                                      VehicleBadge(
+                                        type: type,
+                                        semanticLabel: tr(
+                                          te: type.teluguName,
+                                          en: type.englishName,
+                                        ),
+                                      ),
                                       const SizedBox(height: 8),
                                       Text(
-                                        type.label,
+                                        tr(te: type.teluguName, en: type.englishName),
                                         textAlign: TextAlign.center,
                                       ),
                                     ],
@@ -323,13 +340,14 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                   ),
                   const SizedBox(height: 20),
                   MandalVillagePicker(
+                    language: language,
                     key: const ValueKey('driver-village'),
                     initialVillageId: _villageId,
                     onChanged: (id) => _villageId = id,
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    AppStrings.specializations,
+                    language.label(AppStrings.specializations),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
@@ -339,7 +357,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     children: [
                       for (final option in AppStrings.specializationOptions)
                         FilterChip(
-                          label: Text(option),
+                          key: ValueKey('driver-specialization-${AppStrings.specializationOptions.indexOf(option)}'),
+                          label: Text(language.label(option)),
                           selected: _specializations.contains(option),
                           materialTapTargetSize: MaterialTapTargetSize.padded,
                           onSelected: (selected) => setState(() {
@@ -362,7 +381,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     onPressed: _saving ? null : _register,
                     icon: const Icon(Icons.person_add),
                     label: Text(
-                      _saving ? AppStrings.saving : AppStrings.registerDriver,
+                      _saving ? language.label(AppStrings.saving) : language.label(AppStrings.registerDriver),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -370,7 +389,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                   TextButton(
                     key: const ValueKey('cancel-onboarding'),
                     onPressed: _saving ? null : _leave,
-                    child: const Text(AppStrings.cancelRegistration, textAlign: TextAlign.center),
+                    child: Text(tr(te: 'రద్దు చేయండి', en: 'Cancel'), textAlign: TextAlign.center),
                   ),
                 ],
               ),

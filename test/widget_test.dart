@@ -11,11 +11,16 @@ import 'package:kolleru_wheels/data/models/vehicle_type.dart';
 import 'package:kolleru_wheels/data/repositories/mock_directory_repository.dart';
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() => SharedPreferences.setMockInitialValues({
+    'has_seen_welcome': true,
+    'selected_language': 'english',
+  }));
   testWidgets(
     'Selected village displays available drivers in three proximity sections',
     (tester) async {
       SharedPreferences.setMockInitialValues({
+        'has_seen_welcome': true,
+        'selected_language': 'english',
         'directory_village_id': 'kovvadalanka',
       });
       await tester.pumpWidget(

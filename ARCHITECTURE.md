@@ -2,7 +2,7 @@
 
 Technical architecture, product rationale, implementation boundaries, and delivery roadmap.
 
-**Current commercial behavior (12 October 2026):** Section 21 adds explicit guest directory browsing and existing-driver recovery to section 13. Posting and account controls require a completed login; farmer, driver, and admin account views remain isolated. Earlier zero-login, dual-role navigation, and ID-conflict sync descriptions are historical.
+**Current commercial behavior (12 October 2026):** Section 22 adds first-launch discovery and a persisted Telugu/English preference to section 21's explicit guest directory browsing and existing-driver recovery. Posting and account controls require a completed login; farmer, driver, and admin account views remain isolated. Earlier zero-login launch, dual-role navigation, and ID-conflict sync descriptions are historical.
 
 **Architecture snapshot:** 6 October 2026. **Primary platform:** Flutter Android. **Current milestone:** Phases 1–4 plus the Supabase client integration with persistent offline caches and pending writes. Live database authorization, FCM, and field deployment remain to be verified or implemented. Section 11 describes the cloud integration and supersedes the earlier local-only workflow descriptions below.
 
@@ -49,11 +49,11 @@ Primary journey: recognize the appropriate vehicle → choose the locality → c
 
 ### Shared UX principles
 
-- **Zero-login browsing:** `HomeDirectoryScreen` is the launch screen. Driver Mode is optional. Local registration is not authenticated login or phone verification.
+- **First-launch discovery and guest browsing:** `WelcomeDiscoveryScreen` introduces the directory once, then enters `SessionRouter`. Returning users enter the existing session gate directly. Its explicit guest control opens `HomeDirectoryScreen`; posting and account actions retain authentication requirements.
 - **Visual recognition:** offline `CustomPainter` illustrations distinguish Bolero Pickup, Tata Ace, Dost, Eicher 14 ft, and Tractor. Model and capacity labels remain visible.
 - **Outdoor contrast:** primary green `#00875A`, warning amber `#FFC107`, deep charcoal `#202B28`, and dashboard busy red `#D9383A`. Status always includes text and/or an icon rather than relying on color alone.
 - **Large touch targets:** shared button themes provide 56–60 logical-pixel minimum heights; prominent call, registration, posting, and sharing actions use 64-pixel minimum heights. Vehicle badges appear at 88–120 pixels in major screens.
-- **Bilingual copy:** centralized strings pair Telugu and English. UTF-8 source files preserve Telugu characters. Current localization is embedded bilingual copy, not a language-switching localization framework.
+- **Language preference:** welcome, phone/OTP, farmer profile completion, and driver registration show Telugu or English separately through `AppLanguageProvider`, with Telugu as the default. Existing directory/dashboard constants retain paired copy. UTF-8 source files and system fonts preserve Telugu characters without downloaded localization assets.
 - **Offline first launch:** static villages, seeded drivers, local profiles, vector badges, and system-font Telugu fallback do not require asset downloads. Google Fonts is installed but not used by the current theme.
 - **Direct contact:** `url_launcher` receives a `tel:` URI and delegates calling to the platform dialer. A dialer failure produces a recoverable message. Demo numbers display a notice instead of launching a call.
 - **Accessibility:** layouts adapt to narrow screens and larger text. `AudioCueButton` uses Flutter semantic announcements when supported; spoken output depends on an enabled screen reader such as TalkBack. It is not standalone text-to-speech or a recorded-audio system.
@@ -66,10 +66,16 @@ It is not yet a strict domain-isolated Clean Architecture implementation. Presen
 
 ```mermaid
 flowchart TD
-    App[KolleruWheelsApp] --> Home[HomeDirectoryScreen]
+    App[KolleruWheelsApp] --> Gate[WelcomeGate]
+    Gate -->|First launch| Welcome[WelcomeDiscoveryScreen]
+    Welcome -->|Get Started| Session[SessionRouter]
+    Gate -->|Welcome completed| Session
+    Session -->|Unauthenticated| Phone[PhoneOtpScreen]
+    Session -->|Guest or shipper| Home[HomeDirectoryScreen]
+    Session -->|Driver| Mode[DriverModeScreen]
+    Session -->|Admin| Admin[AdminDashboardScreen]
     Home --> Match[ProximityMatcher]
     Home --> Mock[MockDirectoryRepository]
-    Home --> Mode[DriverModeScreen]
     Mode --> Registration[DriverRegistrationScreen]
     Mode --> Dashboard[DriverDashboardScreen]
     Registration --> Profile[LocalDriverRepository]
@@ -703,3 +709,15 @@ Apply `supabase/migrations/202610120003_guest_directory_and_driver_recovery.sql`
 The login screen uses offline system typography, an agricultural hero, a white outlined 16 dp form card, a locked `+91` input prefix, emerald OTP actions, wrapping login/register pills, and a persistent guest button. Added regression tests cover recovery, identity separation, failed-read retry, existing-driver preservation, guest posting gates, and AppBar/system-back/cancel exits for phone, farmer, and driver onboarding.
 
 Validation: scoped whitespace checks passed. The migration and predecessor SQL compiled in isolated PostgreSQL 16 single-user mode; phone normalization, server UID stamping, and guest telemetry stamping assertions passed. That mode bypasses RLS, so live authorization remains unverified. `dart fix --apply lib`, `flutter analyze`, and `flutter test` all failed before loading the app because the installed Windows Flutter SDK cannot execute in the Linux shell. Analyzer and Flutter test results remain unverified.
+
+## 22. Welcome discovery and onboarding language (12 October 2026)
+
+`KolleruWheelsApp` loads `AppLanguageProvider` and supplies it above `MaterialApp` through Flutter's `InheritedNotifier`. The preference uses `selected_language` (`telugu` or `english`) in `SharedPreferences`, defaults to Telugu, changes immediately, and serializes writes so rapid toggles preserve the last selection. Standalone auth/onboarding screens load and dispose a local provider when no app scope is supplied. This follows the existing ChangeNotifier/StatefulWidget approach and adds no runtime dependency or server schema.
+
+`WelcomeGate` checks `has_seen_welcome`, defaulting to false. The first launch opens `WelcomeDiscoveryScreen`; later launches enter the existing `SessionRouter`. Completing welcome persists the flag before replacing the route with that router, which shows `PhoneOtpScreen` for unauthenticated users and preserves authoritative farmer, driver, and admin destinations. Session restoration remains owned by the router rather than blocking the welcome screen in `main()`.
+
+The welcome screen has three swipeable pages, selectable animated dots, a language action, and a persistent emerald Get Started button. Each page scrolls vertically when text or screen size requires it. Reduced-motion preferences disable navigation/dot animation. `OnboardingIllustrationCard` paints ponds and connecting truck routes, capacity/verified-phone visiting cards, and direct farmer/driver phone and WhatsApp contact using only Flutter paths, shapes, and text. Artwork has localized semantic descriptions and no bitmap assets, remote fonts, or image downloads. Capacities in discovery copy remain driver-declared; a verified badge describes phone verification.
+
+Phone/OTP, profile completion, driver registration, and the driver profile recovery gate use one selected language for visible copy, validation, cancel/guest controls, vehicle choices, and location labels. Changing language retains form input and refreshes submitted validation. Shared location/avatar/vehicle components accept optional localized labels while preserving their existing defaults elsewhere. Existing widget keys, repository calls, registration transactions, guest exits, and call telemetry paths remain intact. Persisted vehicle, village, role, and commodity values are unchanged; new location-option keys let tests select villages independently of display language.
+
+Regression fixtures seed a completed welcome and English preference where they exercise existing auth/app journeys. New tests cover first launch and restart, swipe navigation, stored language/racing updates, authenticated routing, preserved form input, validation language changes, narrow layouts with enlarged text, and offline vector painting. `dart fix --apply lib`, `flutter analyze`, and `flutter test` were attempted but failed before project loading: the configured Windows Flutter SDK's CRLF shell scripts cannot execute in this Linux environment. Analyzer and test success remain unverified.

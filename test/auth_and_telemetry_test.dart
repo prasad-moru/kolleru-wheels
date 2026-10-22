@@ -113,7 +113,10 @@ class AuthorizedTestAdmin extends AuthRepository {
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() => SharedPreferences.setMockInitialValues({
+    'has_seen_welcome': true,
+    'selected_language': 'english',
+  }));
   test('Indian phone variants normalize to the same verified identity', () {
     for (final phone in ['9876543210', '+91 98765 43210', '919876543210', '(+91) 98765-43210']) {
       expect(AuthRepository.normalizePhone(phone), '+919876543210');
@@ -213,7 +216,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(PhoneOtpScreen), findsOneWidget);
-      expect(find.text('Kolleru Wheels'), findsNothing);
+      expect(find.byKey(const ValueKey('login-hero')), findsOneWidget);
     },
   );
   testWidgets(

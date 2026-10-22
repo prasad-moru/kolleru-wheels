@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../data/models/local_driver_profile.dart';
 import '../../data/repositories/local_driver_repository.dart';
 import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../auth/session_router.dart';
 import '../auth/onboarding_navigation.dart';
+import '../common/language_switch_button.dart';
 import 'driver_dashboard_screen.dart';
 import 'driver_registration_screen.dart';
 
@@ -27,7 +28,7 @@ class DriverModeScreen extends StatefulWidget {
   State<DriverModeScreen> createState() => _DriverModeScreenState();
 }
 
-class _DriverModeScreenState extends State<DriverModeScreen> {
+class _DriverModeScreenState extends LanguageAwareState<DriverModeScreen> {
   late Future<LocalDriverProfile?> _profile;
   @override
   void initState() {
@@ -48,10 +49,11 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
     onExit: _leave,
     child: Scaffold(
       appBar: AppBar(
-        title: const Text(AppStrings.driverMode),
+        title: Text(tr(te: 'డ్రైవర్ వివరాలు', en: 'Driver profile')),
+        actions: [LanguageSwitchButton(language: language)],
         leading: IconButton(
           key: const ValueKey('onboarding-back'),
-          tooltip: AppStrings.cancelRegistration,
+          tooltip: tr(te: 'రద్దు చేయండి', en: 'Cancel'),
           onPressed: _leave,
           icon: const Icon(Icons.arrow_back),
         ),
@@ -74,17 +76,21 @@ class _DriverModeScreenState extends State<DriverModeScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(AppStrings.loadFailed),
+                      Text(
+                        tr(te: 'ప్రొఫైల్ తెరవలేదు', en: 'Could not load profile'),
+                        key: const ValueKey('driver-profile-error'),
+                      ),
                       FilledButton(
+                        key: const ValueKey('retry-driver-profile'),
                         onPressed: () => setState(() {
                           _profile = _loadProfile();
                         }),
-                        child: const Text(AppStrings.retry),
+                        child: Text(tr(te: 'మళ్లీ ప్రయత్నించండి', en: 'Retry')),
                       ),
                       TextButton(
                         key: const ValueKey('cancel-onboarding'),
                         onPressed: _leave,
-                        child: const Text(AppStrings.cancelRegistration),
+                        child: Text(tr(te: 'రద్దు చేయండి', en: 'Cancel')),
                       ),
                     ],
                   ),
