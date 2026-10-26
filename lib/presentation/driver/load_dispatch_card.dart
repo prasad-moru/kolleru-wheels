@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../core/constants/villages.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
@@ -60,27 +61,63 @@ class LoadDispatchCard extends StatelessWidget {
     ),
   );
 
-  Widget _commodity() {
+  Widget _commodity(BuildContext context) {
+    final language = AppLanguageScope.maybeOf(context);
+    final material = language == null
+        ? request.materialType
+        : switch (request.materialType) {
+            'ఐరన్ / రాడ్లు' => language.tr(te: 'ఐరన్ రాడ్లు', en: 'Iron rods'),
+            'సిమెంట్' => language.tr(te: 'సిమెంట్', en: 'Cement'),
+            'పైపులు' => language.tr(te: 'పైపులు', en: 'Pipes'),
+            'చేపల దాణా' => language.tr(te: 'చేపల దాణా', en: 'Fish feed'),
+            'ఇతర సామాన్లు' => language.tr(
+              te: 'ఇతర సామాన్లు',
+              en: 'Other goods',
+            ),
+            _ => language.label(request.materialType),
+          };
     final label = request.materialType.toLowerCase();
-    if (label.contains('feed') || label.contains('fertiliz') ||
-        label.contains('fertilis') || label.contains('దాణా') ||
+    if (label.contains('feed') ||
+        label.contains('fertiliz') ||
+        label.contains('fertilis') ||
+        label.contains('దాణా') ||
         label.contains('ఎరువు')) {
-      return _pill(request.materialType, Icons.grain,
-          const Color(0xFFE0F2FE), const Color(0xFF0369A1));
+      return _pill(
+        material,
+        Icons.grain,
+        const Color(0xFFE0F2FE),
+        const Color(0xFF0369A1),
+      );
     }
-    if (label.contains('fish') || label.contains('shrimp') ||
-        label.contains('prawn') || label.contains('చేప') ||
+    if (label.contains('fish') ||
+        label.contains('shrimp') ||
+        label.contains('prawn') ||
+        label.contains('చేప') ||
         label.contains('రొయ్య')) {
-      return _pill(request.materialType, Icons.water_outlined,
-          const Color(0xFFDCFCE7), const Color(0xFF15803D));
+      return _pill(
+        material,
+        Icons.water_outlined,
+        const Color(0xFFDCFCE7),
+        const Color(0xFF15803D),
+      );
     }
-    if (label.contains('paddy') || label.contains('grain') ||
-        label.contains('ధాన్యం') || label.contains('వరి')) {
-      return _pill(request.materialType, Icons.grass,
-          const Color(0xFFFEF3C7), const Color(0xFFB45309));
+    if (label.contains('paddy') ||
+        label.contains('grain') ||
+        label.contains('ధాన్యం') ||
+        label.contains('వరి')) {
+      return _pill(
+        material,
+        Icons.grass,
+        const Color(0xFFFEF3C7),
+        const Color(0xFFB45309),
+      );
     }
-    return _pill(request.materialType, Icons.inventory_2_outlined,
-        const Color(0xFFF1F5F9), _slate);
+    return _pill(
+      material,
+      Icons.inventory_2_outlined,
+      const Color(0xFFF1F5F9),
+      _slate,
+    );
   }
 
   Widget _routeNode(
@@ -121,6 +158,15 @@ class LoadDispatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final language = AppLanguageScope.maybeOf(context);
+    String label(String value) => language?.label(value) ?? value;
+    String tr(String te, String en, String fallback) =>
+        language?.tr(te: te, en: en) ?? fallback;
+    final destination = tr(
+      request.toVillage.teluguName,
+      request.toVillage.name,
+      request.toVillage.label,
+    );
     final remaining = request.expiresAt.difference(now);
     final minutesLeft = (remaining.inSeconds / 60).ceil().clamp(0, 30);
     final closingSoon = remaining <= const Duration(minutes: 5);
@@ -152,13 +198,17 @@ class LoadDispatchCard extends StatelessWidget {
             alignment: WrapAlignment.spaceBetween,
             children: [
               _pill(
-                AppStrings.urgentBadge,
+                label(AppStrings.urgentBadge),
                 Icons.bolt,
                 closingSoon ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7),
                 closingSoon ? const Color(0xFFB91C1C) : const Color(0xFFB45309),
               ),
               _pill(
-                '$minutesLeft నిమి / min left',
+                tr(
+                  '$minutesLeft నిమిషాలు మిగిలి ఉన్నాయి',
+                  '${minutesLeft}m left',
+                  '$minutesLeft నిమి / min left',
+                ),
                 Icons.timer_outlined,
                 const Color(0xFFF1F5F9),
                 _slate,
@@ -168,33 +218,58 @@ class LoadDispatchCard extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Semantics(
-            label: '${request.fromLocation} ➔ ${request.toVillage.label}',
+            label: '${label(request.fromLocation)} ➔ $destination',
             child: ExcludeSemantics(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _routeNode(AppStrings.pickupSpot, request.fromLocation,
-                      Icons.circle, const Color(0xFF059669), context),
+                  _routeNode(
+                    label(AppStrings.pickupSpot),
+                    label(request.fromLocation),
+                    Icons.circle,
+                    const Color(0xFF059669),
+                    context,
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 5),
                     child: SizedBox(
                       width: 24,
                       child: Column(
                         children: [
-                          Container(width: 1.5, height: 14, color: const Color(0xFF94A3B8)),
-                          const Icon(Icons.arrow_downward, size: 17, color: Color(0xFF94A3B8)),
+                          Container(
+                            width: 1.5,
+                            height: 14,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                          const Icon(
+                            Icons.arrow_downward,
+                            size: 17,
+                            color: Color(0xFF94A3B8),
+                          ),
                         ],
                       ),
                     ),
                   ),
-                  _routeNode(AppStrings.dropVillage, request.toVillage.label,
-                      Icons.location_on, const Color(0xFFD97706), context),
+                  _routeNode(
+                    label(AppStrings.dropVillage),
+                    destination,
+                    Icons.location_on,
+                    const Color(0xFFD97706),
+                    context,
+                  ),
                   if (mandal != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 36, top: 4),
                       child: Text(
-                        '${mandal.teluguName} / ${mandal.name}',
-                        style: const TextStyle(color: _slate, fontWeight: FontWeight.w600),
+                        tr(
+                          mandal.teluguName,
+                          mandal.name,
+                          '${mandal.teluguName} / ${mandal.name}',
+                        ),
+                        style: const TextStyle(
+                          color: _slate,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                 ],
@@ -206,9 +281,11 @@ class LoadDispatchCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _commodity(),
+              _commodity(context),
               _pill(
-                request.vehicleTypeNeeded?.label ?? AppStrings.anyVehicle,
+                label(
+                  request.vehicleTypeNeeded?.label ?? AppStrings.anyVehicle,
+                ),
                 Icons.local_shipping_outlined,
                 const Color(0xFFE0F2FE),
                 const Color(0xFF0369A1),
@@ -223,11 +300,21 @@ class LoadDispatchCard extends StatelessWidget {
             runSpacing: 6,
             alignment: WrapAlignment.spaceBetween,
             children: [
-              Text(request.posterName, style: const TextStyle(color: _ink, fontWeight: FontWeight.w500)),
+              Text(
+                label(request.posterName),
+                style: const TextStyle(
+                  color: _ink,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               Text(
                 now.difference(request.createdAt).inMinutes < 1
-                    ? AppStrings.justPosted
-                    : '${now.difference(request.createdAt).inMinutes} నిమిషాల క్రితం / minutes ago',
+                    ? label(AppStrings.justPosted)
+                    : tr(
+                        '${now.difference(request.createdAt).inMinutes} నిమిషాల క్రితం',
+                        '${now.difference(request.createdAt).inMinutes}m ago',
+                        '${now.difference(request.createdAt).inMinutes} నిమిషాల క్రితం / minutes ago',
+                      ),
                 style: const TextStyle(color: _slate, fontSize: 12),
               ),
             ],
@@ -235,7 +322,7 @@ class LoadDispatchCard extends StatelessWidget {
           const SizedBox(height: 12),
           CallButton(
             phone: request.posterPhone,
-            label: AppStrings.callFarmer,
+            label: label(AppStrings.callFarmer),
             backgroundColor: const Color(0xFF059669),
             borderRadius: 12,
             maxLabelLines: null,

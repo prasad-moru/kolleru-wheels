@@ -6,6 +6,7 @@ import '../../core/constants/supabase_config.dart';
 import '../../core/constants/villages.dart';
 import '../../core/utils/indian_phone_number.dart';
 import '../models/driver_model.dart';
+import '../models/driver_verification.dart';
 import '../models/vehicle_type.dart';
 import 'local_driver_repository.dart';
 import 'offline_table_store.dart';
@@ -55,8 +56,10 @@ class SupabaseDriverRepository {
       'vehicle_type': driver.vehicleType.name,
       'capacity_tons': tons,
       'vehicle_number': driver.vehicleNumber,
+      'base_location': driver.baseLocation,
       'specializations': driver.specializations,
       'is_available': driver.isAvailable,
+      'verification_status': driver.verification.name,
       'avatar_url': driver.avatarUrl,
       'card_style': driver.cardStyle,
       'updated_at': now.toUtc().toIso8601String(),
@@ -86,11 +89,13 @@ class SupabaseDriverRepository {
       capacityTons: tons,
       capacity: '$tons టన్నులు / $tons Tons',
       vehicleNumber: row['vehicle_number'] as String,
+      baseLocation: row['base_location'] as String?,
       specializations: (row['specializations'] as List? ?? []).cast<String>(),
       isAvailable: row['is_available'] as bool,
       avatarUrl: row['avatar_url'] as String?,
       cardStyle: row['card_style'] as String? ?? 'classic_delta',
       isPhoneVerified: true,
+      verification: DriverVerification.fromValue(row['verification_status']),
     );
   }
 
@@ -98,22 +103,28 @@ class SupabaseDriverRepository {
   Future<DriverModel?> getOwnDriver(String phone) => _queue.run(() async {
     final normalized = IndianPhoneNumber.normalize(phone);
     final user = _client?.auth.currentUser;
-    if (_client != null && (user == null ||
-        IndianPhoneNumber.normalize(user.phone ?? '') != normalized)) {
+    if (_client != null &&
+        (user == null ||
+            IndianPhoneNumber.normalize(user.phone ?? '') != normalized)) {
       throw StateError('Verify this driver phone before restoring its profile');
     }
     bool matches(Map<String, dynamic> row) {
       if (user != null && row['user_id'] == user.id) return true;
       try {
-        return IndianPhoneNumber.normalize(row['phone'] as String) == normalized;
+        return IndianPhoneNumber.normalize(row['phone'] as String) ==
+            normalized;
       } catch (_) {
         return false;
       }
     }
+
     DriverModel? decode(Map<String, dynamic> row) {
       try {
         final driver = fromRow(row).copyWith(phone: normalized);
-        if (driver.name.trim().length < 2 || driver.vehicleNumber.trim().isEmpty) return null;
+        if (driver.name.trim().length < 2 ||
+            driver.vehicleNumber.trim().isEmpty) {
+          return null;
+        }
         return driver;
       } on FormatException {
         return null;
@@ -123,30 +134,49 @@ class SupabaseDriverRepository {
         return null;
       }
     }
-    final pending = (await _store.read(_store.pendingKey)).where(matches).firstOrNull;
+
+    final pending = (await _store.read(_store.pendingKey))
+        .where(matches)
+        .firstOrNull;
     final pendingDriver = pending == null ? null : decode(pending);
     if (pendingDriver != null) return pendingDriver;
-    final cached = (await _store.read(_store.cacheKey)).where(matches).firstOrNull;
+    final cached = (await _store.read(_store.cacheKey))
+        .where(matches)
+        .firstOrNull;
     if (_client == null) return cached == null ? null : decode(cached);
     if (user == null) throw StateError('A verified driver session is required');
     final uid = user.id;
     try {
-      final phones = '$normalized,${normalized.substring(1)},${normalized.substring(3)}';
+      final phones =
+          '$normalized,${normalized.substring(1)},${normalized.substring(3)}';
       List<Map<String, dynamic>> rows;
       try {
-        rows = await _client.from('drivers').select()
+        rows = await _client
+            .from('drivers')
+            .select()
             .or('user_id.eq.$uid,phone.in.($phones)')
-            .limit(3).timeout(const Duration(seconds: 8));
+            .limit(3)
+            .timeout(const Duration(seconds: 8));
       } on PostgrestException catch (error) {
         if (error.code != '42703' && error.code != 'PGRST204') rethrow;
         // Supports installations that have not applied the optional UID column.
-        rows = await _client.from('drivers').select()
-            .inFilter('phone', [normalized, normalized.substring(1), normalized.substring(3)])
-            .limit(3).timeout(const Duration(seconds: 8));
+        rows = await _client
+            .from('drivers')
+            .select()
+            .inFilter('phone', [
+              normalized,
+              normalized.substring(1),
+              normalized.substring(3),
+            ])
+            .limit(3)
+            .timeout(const Duration(seconds: 8));
       }
       final owned = rows.where(matches).toList();
-      owned.sort((a, b) => (b['user_id'] == uid ? 1 : 0)
-          .compareTo(a['user_id'] == uid ? 1 : 0));
+      owned.sort(
+        (a, b) => (b['user_id'] == uid ? 1 : 0).compareTo(
+          a['user_id'] == uid ? 1 : 0,
+        ),
+      );
       for (final row in owned) {
         final driver = decode(row);
         if (driver != null) {
@@ -170,12 +200,19 @@ class SupabaseDriverRepository {
       try {
         final confirmed = await _client
             .from('drivers')
-            .upsert(row, onConflict: 'phone')
-            .select('id')
+            .upsert(
+              Map<String, dynamic>.from(row)
+                ..remove('verification_status')
+                ..remove('reviewed_by')
+                ..remove('reviewed_at'),
+              onConflict: 'phone',
+            )
+            .select()
             .timeout(const Duration(seconds: 8));
         if (confirmed.length != 1 || confirmed.single['id'] != row['id']) {
           throw StateError('Cloud driver write was not confirmed');
         }
+        await _store.put(_store.cacheKey, {...row, ...confirmed.single});
         await _store.remove(_store.pendingKey, row['id'] as String);
       } catch (_) {
         syncPending = true;
@@ -230,8 +267,11 @@ class SupabaseDriverRepository {
       try {
         final fetched = await _client
             .from('drivers')
-            .select('id,phone,name,base_village_id,current_spot_village_id,vehicle_type,capacity_tons,vehicle_number,specializations,is_available,avatar_url,card_style,updated_at')
+            .select(
+              'id,phone,name,base_village_id,current_spot_village_id,vehicle_type,capacity_tons,vehicle_number,base_location,specializations,is_available,avatar_url,card_style,updated_at,verification_status',
+            )
             .eq('is_available', true)
+            .eq('verification_status', 'approved')
             .order('updated_at', ascending: false)
             .timeout(const Duration(seconds: 8));
         // Validate before replacing the last known usable snapshot.
@@ -250,7 +290,7 @@ class SupabaseDriverRepository {
       merged[row['id'] as String] = row;
     }
     return List.unmodifiable(
-      merged.values.map(fromRow).where((d) => d.isAvailable),
+      merged.values.map(fromRow).where((d) => d.isPubliclyAvailable),
     );
   });
   Future<void> _update(String id, {bool? available, String? spot}) =>

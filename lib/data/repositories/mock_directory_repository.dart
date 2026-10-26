@@ -97,6 +97,8 @@ class MockDirectoryRepository implements DirectoryRepository {
         'చేపల బాక్సులు • Fish boxes',
         'భారీ లోడ్లు • Heavy loads',
       ],
+      VehicleType.miniTruck709 => const ['సరుకు రవాణా / Goods transport'],
+      VehicleType.tipper => const ['ఇసుక / Sand'],
       VehicleType.tractor => const ['పంట / వ్యవసాయం • Farm loads'],
     },
   );

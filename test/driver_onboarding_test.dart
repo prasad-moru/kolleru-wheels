@@ -68,23 +68,35 @@ void main() {
   });
   tearDown(() => AuthRepository.instance.currentProfile = null);
 
-  test('Card style defaults for legacy JSON and survives profile updates', () async {
-    final legacy = profile().toJson()..remove('cardStyle');
-    expect(LocalDriverProfile.fromJson(legacy).cardStyle, 'classic_delta');
-    final repository = LocalDriverRepository();
-    await repository.saveProfile(profile().copyWith(cardStyle: 'gold_elite'));
-    await repository.updateAvailability(false);
-    final restored = (await LocalDriverRepository().getProfile())!;
-    expect(restored.cardStyle, 'gold_elite');
-    expect(restored.toDriverModel().cardStyle, 'gold_elite');
-    expect(restored.toDriverModel().copyWith(avatarUrl: 'photo').cardStyle, 'gold_elite');
-  });
+  test(
+    'Card style defaults for legacy JSON and survives profile updates',
+    () async {
+      final legacy = profile().toJson()..remove('cardStyle');
+      expect(LocalDriverProfile.fromJson(legacy).cardStyle, 'classic_delta');
+      final repository = LocalDriverRepository();
+      await repository.saveProfile(profile().copyWith(cardStyle: 'gold_elite'));
+      await repository.updateAvailability(false);
+      final restored = (await LocalDriverRepository().getProfile())!;
+      expect(restored.cardStyle, 'gold_elite');
+      expect(restored.toDriverModel().cardStyle, 'gold_elite');
+      expect(
+        restored.toDriverModel().copyWith(avatarUrl: 'photo').cardStyle,
+        'gold_elite',
+      );
+    },
+  );
 
-  testWidgets('Owner selects a style and it persists after reopening', (tester) async {
+  testWidgets('Owner selects a style and it persists after reopening', (
+    tester,
+  ) async {
     final saved = profile();
     await LocalDriverRepository().saveProfile(saved);
-    await tester.pumpWidget(MaterialApp(theme: AppTheme.light,
-      home: VisitingCardScreen(driver: saved.toDriverModel())));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: VisitingCardScreen(driver: saved.toDriverModel()),
+      ),
+    );
     await tester.pumpAndSettle();
     final selector = find.byKey(const ValueKey('card-style-aqua_marine'));
     await tester.ensureVisible(selector);
@@ -92,12 +104,28 @@ void main() {
     await tester.pumpAndSettle();
     final restored = (await LocalDriverRepository().getProfile())!;
     expect(restored.cardStyle, 'aqua_marine');
-    expect(tester.widget<TransportVisitingCard>(find.byType(TransportVisitingCard)).driver.cardStyle, 'aqua_marine');
+    expect(
+      tester
+          .widget<TransportVisitingCard>(find.byType(TransportVisitingCard))
+          .driver
+          .cardStyle,
+      'aqua_marine',
+    );
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(MaterialApp(theme: AppTheme.light,
-      home: VisitingCardScreen(driver: restored.toDriverModel())));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: VisitingCardScreen(driver: restored.toDriverModel()),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(tester.widget<TransportVisitingCard>(find.byType(TransportVisitingCard)).driver.cardStyle, 'aqua_marine');
+    expect(
+      tester
+          .widget<TransportVisitingCard>(find.byType(TransportVisitingCard))
+          .driver
+          .cardStyle,
+      'aqua_marine',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -200,9 +228,9 @@ void main() {
         tester,
         find.byKey(const ValueKey('driver-availability')),
       );
-      expect(find.text(AppStrings.currentlyBusy), findsOneWidget);
+      expect(find.text('⚪ Offline - Off Duty'), findsOneWidget);
       await tapVisible(tester, find.byKey(const ValueKey('current-spot')));
-      await tester.tap(find.text(DriverSpots.hubs.first.label));
+      await tester.tap(find.text('Kaikaluru Adda'));
       await tester.pumpAndSettle();
       expect(
         (await LocalDriverRepository().getProfile())!.currentSpotVillage.id,
@@ -226,8 +254,12 @@ void main() {
       await tester.pumpWidget(const KolleruWheelsApp());
       await tester.pumpAndSettle();
       expect(find.byType(DriverRegistrationScreen), findsNothing);
-      expect(find.text(AppStrings.currentlyBusy), findsOneWidget);
-      expect(find.text(DriverSpots.hubs.first.label), findsOneWidget);
+      expect(find.text('⚪ Offline - Off Duty'), findsOneWidget);
+      await revealInVerticalList(
+        tester,
+        find.byKey(const ValueKey('current-spot')),
+      );
+      expect(find.text('Kaikaluru Adda'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -323,8 +355,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tapVisible(tester, find.byKey(const ValueKey('driver-availability')));
-    expect(find.text(AppStrings.availableForLoads), findsOneWidget);
-    expect(find.text(AppStrings.saveFailed), findsOneWidget);
+    expect(find.text('🟢 Online - Ready for Loads'), findsOneWidget);
+    expect(find.text('Could not save. Please try again.'), findsOneWidget);
     expect((await LocalDriverRepository().getProfile())!.isAvailable, true);
   });
 

@@ -1,59 +1,71 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 
 class DirectoryEmptyState extends StatelessWidget {
   const DirectoryEmptyState({super.key, required this.onReset});
   final VoidCallback onReset;
 
   @override
-  Widget build(BuildContext context) => Container(
-    key: const ValueKey('directory-empty'),
-    margin: const EdgeInsets.only(top: 16),
-    padding: const EdgeInsets.all(24),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE2E8F0), width: 0.5),
-    ),
-    child: Column(
-      children: [
-        Container(
-          width: 96,
-          height: 96,
-          decoration: const BoxDecoration(
-            color: Color(0xFFECFDF5),
-            shape: BoxShape.circle,
+  Widget build(BuildContext context) {
+    final language = AppLanguageScope.maybeOf(context);
+    String label(String value) => language?.label(value) ?? value;
+    return Container(
+      key: const ValueKey('directory-empty'),
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.5),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: const BoxDecoration(
+              color: Color(0xFFECFDF5),
+              shape: BoxShape.circle,
+            ),
+            child: const Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  Icons.local_shipping_outlined,
+                  size: 48,
+                  color: Color(0xFF0F5132),
+                ),
+                Positioned(
+                  right: 10,
+                  bottom: 14,
+                  child: Icon(Icons.search, size: 28, color: Color(0xFF047857)),
+                ),
+              ],
+            ),
           ),
-          child: const Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(Icons.local_shipping_outlined, size: 48, color: Color(0xFF0F5132)),
-              Positioned(
-                right: 10,
-                bottom: 14,
-                child: Icon(Icons.search, size: 28, color: Color(0xFF047857)),
-              ),
-            ],
+          const SizedBox(height: 16),
+          Text(
+            label(AppStrings.noDrivers),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          AppStrings.noDrivers,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 8),
-        const Text(AppStrings.emptyDirectoryHint, textAlign: TextAlign.center),
-        const SizedBox(height: 20),
-        OutlinedButton.icon(
-          onPressed: onReset,
-          icon: const Icon(Icons.filter_alt_off_outlined),
-          label: const Text(AppStrings.reset, textAlign: TextAlign.center),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 8),
+          Text(
+            label(AppStrings.emptyDirectoryHint),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: onReset,
+            icon: const Icon(Icons.filter_alt_off_outlined),
+            label: Text(label(AppStrings.reset), textAlign: TextAlign.center),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Animated only while fetching. Reduced-motion users see static placeholders.
@@ -115,9 +127,15 @@ class _DirectoryLoadingStateState extends State<DirectoryLoadingState>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FractionallySizedBox(widthFactor: 0.8, child: _block(double.infinity, 16)),
+                  FractionallySizedBox(
+                    widthFactor: 0.8,
+                    child: _block(double.infinity, 16),
+                  ),
                   const SizedBox(height: 10),
-                  FractionallySizedBox(widthFactor: 0.6, child: _block(double.infinity, 12)),
+                  FractionallySizedBox(
+                    widthFactor: 0.6,
+                    child: _block(double.infinity, 12),
+                  ),
                 ],
               ),
             ),
@@ -133,7 +151,9 @@ class _DirectoryLoadingStateState extends State<DirectoryLoadingState>
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: AppStrings.loadingDrivers,
+    label:
+        AppLanguageScope.maybeOf(context)?.label(AppStrings.loadingDrivers) ??
+        AppStrings.loadingDrivers,
     liveRegion: true,
     child: ExcludeSemantics(
       child: AnimatedBuilder(
@@ -143,7 +163,11 @@ class _DirectoryLoadingStateState extends State<DirectoryLoadingState>
           shaderCallback: (bounds) => LinearGradient(
             begin: Alignment(-3 + 6 * _animation.value, -0.3),
             end: Alignment(-1 + 6 * _animation.value, 0.3),
-            colors: const [Color(0x00FFFFFF), Color(0x99FFFFFF), Color(0x00FFFFFF)],
+            colors: const [
+              Color(0x00FFFFFF),
+              Color(0x99FFFFFF),
+              Color(0x00FFFFFF),
+            ],
           ).createShader(bounds),
           child: child,
         ),

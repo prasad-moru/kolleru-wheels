@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/telemetry_repository.dart';
 
@@ -13,6 +14,9 @@ class CallButton extends StatefulWidget {
     super.key,
     required this.phone,
     this.isDemo = false,
+    this.beforeCall,
+    this.onConnect,
+    this.onCallLaunched,
     this.label = AppStrings.call,
     this.contextNote = 'directory',
     this.callerPhone,
@@ -25,6 +29,9 @@ class CallButton extends StatefulWidget {
     this.borderRadius,
     this.maxLabelLines = 2,
   });
+  final Future<bool> Function()? beforeCall;
+  final Future<void> Function()? onConnect;
+  final VoidCallback? onCallLaunched;
   final String phone;
   final bool isDemo;
   final String label;
@@ -59,8 +66,34 @@ class _CallButtonState extends State<CallButton> {
     }
   }
 
+  String _label(String paired) =>
+      AppLanguageScope.maybeOf(context)?.label(paired) ?? paired;
+
   Future<void> _call() async {
+    if (_launching) return;
     setState(() => _launching = true);
+    if (widget.onConnect != null) {
+      try {
+        await widget.onConnect!();
+      } finally {
+        if (mounted) setState(() => _launching = false);
+      }
+      return;
+    }
+    if (widget.beforeCall != null) {
+      final allowed = await widget.beforeCall!();
+      if (!mounted) return;
+      if (!allowed) {
+        setState(() => _launching = false);
+        return;
+      }
+    }
+    if (widget.isDemo) {
+      setState(() => _launching = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_label(AppStrings.demoCall))));
+      return;
+    }
     unawaited(_log());
     bool launched = false;
     try {
@@ -71,9 +104,10 @@ class _CallButtonState extends State<CallButton> {
     }
     if (!mounted) return;
     setState(() => _launching = false);
+    if (launched) widget.onCallLaunched?.call();
     if (!launched) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(AppStrings.callFailed)));
+          .showSnackBar(SnackBar(content: Text(_label(AppStrings.callFailed))));
     }
   }
 
@@ -95,15 +129,7 @@ class _CallButtonState extends State<CallButton> {
           minimumSize: Size.fromHeight(widget.compact ? 58 : 64),
           padding: EdgeInsets.symmetric(horizontal: widget.compact ? 10 : 20),
         ),
-        onPressed: _launching
-            ? null
-            : widget.isDemo
-            ? () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text(AppStrings.demoCall)),
-                );
-              }
-            : _call,
+        onPressed: _launching ? null : _call,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -111,7 +137,7 @@ class _CallButtonState extends State<CallButton> {
             const SizedBox(width: 7),
             Flexible(
               child: Text(
-                widget.label,
+                _label(widget.label),
                 maxLines: widget.maxLabelLines,
                 overflow: widget.maxLabelLines == null
                     ? TextOverflow.visible
@@ -122,7 +148,7 @@ class _CallButtonState extends State<CallButton> {
           ],
         ),
       ),
-      if (widget.isDemo && !widget.compact) const Text(AppStrings.demoCall),
+      if (widget.isDemo && !widget.compact) Text(_label(AppStrings.demoCall)),
     ],
   );
 }

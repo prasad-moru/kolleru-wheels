@@ -1,4 +1,6 @@
 import '../../core/constants/villages.dart';
+import 'driver_verification.dart';
+import 'vehicle_type.dart';
 
 class AdminAnalyticsModel {
   const AdminAnalyticsModel({
@@ -11,7 +13,13 @@ class AdminAnalyticsModel {
     required this.mandals,
     required this.recentCalls,
     required this.liveLoads,
+    this.fleet = const [],
   });
+
+  final List<AdminFleetDriver> fleet;
+  List<AdminFleetDriver> get pendingDrivers => fleet
+      .where((d) => d.verification == DriverVerification.pending)
+      .toList(growable: false);
 
   final int totalUsers;
   final int activeFarmers;
@@ -34,6 +42,7 @@ class AdminAnalyticsModel {
     final callCounts = <String, int>{};
     final profileMandalByPhone = <String, String>{};
     final driverCounts = <String, int>{};
+    final activeDriverCounts = <String, int>{};
     final farmerCounts = <String, int>{};
 
     String? mandalForVillage(Object? villageId) {
@@ -60,6 +69,15 @@ class AdminAnalyticsModel {
       final mandal = mandalForVillage(driver['base_village_id']);
       if (mandal != null) {
         driverCounts.update(mandal, (value) => value + 1, ifAbsent: () => 1);
+        if (driver['is_available'] == true &&
+            DriverVerification.fromValue(driver['verification_status']) ==
+                DriverVerification.approved) {
+          activeDriverCounts.update(
+            mandal,
+            (value) => value + 1,
+            ifAbsent: () => 1,
+          );
+        }
       }
     }
 
@@ -71,7 +89,13 @@ class AdminAnalyticsModel {
       }
     }
 
-    final mandalOrder = ['kaikaluru', 'mandavalli', 'akividu', 'kalidindi'];
+    final mandalOrder = [
+      'akividu',
+      'kaikaluru',
+      'bhimavaram',
+      'mandavalli',
+      'kalidindi',
+    ];
     final mandals =
         KolleruVillages.mandals
             .where((mandal) => mandalOrder.contains(mandal.id))
@@ -87,6 +111,7 @@ class AdminAnalyticsModel {
             name: mandal.name,
             teluguName: mandal.teluguName,
             driverCount: driverCounts[mandal.id] ?? 0,
+            activeDriverCount: activeDriverCounts[mandal.id] ?? 0,
             farmerCount: farmerCounts[mandal.id] ?? 0,
             callTally: callCounts[mandal.id] ?? 0,
           ),
@@ -115,11 +140,42 @@ class AdminAnalyticsModel {
         if ((load['poster_phone'] as String?)?.isNotEmpty == true)
           _phoneDigits(load['poster_phone'] as String),
     };
+    final fleet = drivers.map(AdminFleetDriver.fromRow).toList(growable: false);
     final calls = recentTelemetry
-        .map(AdminCallLogItem.fromRow)
+        .map((row) {
+          final originId =
+              profileMandalByPhone[_phoneDigits(
+                row['caller_phone'] as String? ?? '',
+              )];
+          final target = fleet
+              .where(
+                (driver) =>
+                    _phoneDigits(driver.phone) ==
+                    _phoneDigits(row['receiver_phone'] as String? ?? ''),
+              )
+              .firstOrNull;
+          final context = row['context_note'] as String? ?? '';
+          final linkedLoad = context.startsWith('urgent_load:')
+              ? loads
+                    .where(
+                      (load) =>
+                          load['id'] ==
+                          context.substring('urgent_load:'.length),
+                    )
+                    .firstOrNull
+              : null;
+          return AdminCallLogItem.fromRow({
+            ...row,
+            'load_category': linkedLoad?['material_type'],
+            'origin_mandal_id': originId,
+            'driver_name': target?.name,
+            'vehicle_type': target?.vehicleType.name,
+          });
+        })
         .toList(growable: false);
 
     return AdminAnalyticsModel(
+      fleet: fleet,
       totalUsers: profiles.length,
       activeFarmers: profiles
           .where(
@@ -131,7 +187,14 @@ class AdminAnalyticsModel {
           )
           .length,
       registeredDrivers: drivers.length,
-      activeDrivers: drivers.where((row) => row['is_available'] == true).length,
+      activeDrivers: drivers
+          .where(
+            (row) =>
+                row['is_available'] == true &&
+                DriverVerification.fromValue(row['verification_status']) ==
+                    DriverVerification.approved,
+          )
+          .length,
       callsPlacedToday: callsToday.length,
       activeLoads: activeRows.length,
       mandals: mandalActivity,
@@ -164,6 +227,7 @@ class MandalActivity {
     required this.driverCount,
     required this.farmerCount,
     required this.callTally,
+    this.activeDriverCount = 0,
   });
 
   final String id;
@@ -172,6 +236,7 @@ class MandalActivity {
   final int driverCount;
   final int farmerCount;
   final int callTally;
+  final int activeDriverCount;
 }
 
 class AdminCallLogItem {
@@ -181,6 +246,10 @@ class AdminCallLogItem {
     required this.callerPhone,
     required this.receiverPhone,
     required this.contextNote,
+    this.originMandalId,
+    this.loadCategory,
+    this.driverName,
+    this.vehicleType,
   });
 
   final DateTime createdAt;
@@ -188,6 +257,10 @@ class AdminCallLogItem {
   final String callerPhone;
   final String receiverPhone;
   final String contextNote;
+  final String? originMandalId;
+  final String? loadCategory;
+  final String? driverName;
+  final VehicleType? vehicleType;
 
   factory AdminCallLogItem.fromRow(Map<String, dynamic> row) =>
       AdminCallLogItem(
@@ -202,6 +275,12 @@ class AdminCallLogItem {
           row['receiver_phone'] as String?,
         ),
         contextNote: row['context_note'] as String? ?? '',
+        originMandalId: row['origin_mandal_id'] as String?,
+        loadCategory: row['load_category'] as String?,
+        driverName: row['driver_name'] as String?,
+        vehicleType: VehicleType.values
+            .where((v) => v.name == row['vehicle_type'])
+            .firstOrNull,
       );
 }
 
@@ -259,4 +338,47 @@ class AdminLoadFeedItem {
       expiresAt: created.add(const Duration(minutes: 30)),
     );
   }
+}
+
+/// Read-only admin projection; status is changed only through the review RPC.
+class AdminFleetDriver {
+  const AdminFleetDriver({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.vehicleType,
+    required this.vehicleNumber,
+    required this.capacityTons,
+    required this.verification,
+    required this.isAvailable,
+    this.mandal,
+  });
+  final String id;
+  final String name;
+  final String phone;
+  final VehicleType vehicleType;
+  final String vehicleNumber;
+  final double capacityTons;
+  final DriverVerification verification;
+  final bool isAvailable;
+  final Mandal? mandal;
+
+  factory AdminFleetDriver.fromRow(Map<String, dynamic> row) =>
+      AdminFleetDriver(
+        id: row['id']?.toString() ?? '',
+        name: row['name'] as String? ?? '',
+        phone: row['phone'] as String? ?? '',
+        vehicleType:
+            VehicleType.values
+                .where((v) => v.name == row['vehicle_type'])
+                .firstOrNull ??
+            VehicleType.boleroPickup,
+        vehicleNumber: row['vehicle_number'] as String? ?? '',
+        capacityTons: (row['capacity_tons'] as num?)?.toDouble() ?? 0,
+        verification: DriverVerification.fromValue(row['verification_status']),
+        isAvailable: row['is_available'] == true,
+        mandal: KolleruVillages.mandals
+            .where((m) => m.villages.any((v) => v.id == row['base_village_id']))
+            .firstOrNull,
+      );
 }

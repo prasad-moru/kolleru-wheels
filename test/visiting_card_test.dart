@@ -14,22 +14,32 @@ import 'package:kolleru_wheels/presentation/driver/visiting_card_screen.dart';
 
 void main() {
   for (final style in ['classic_delta', 'aqua_marine', 'gold_elite']) {
-    testWidgets('$style card fits a narrow screen with enlarged text', (tester) async {
+    testWidgets('$style card fits a narrow screen with enlarged text', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(320, 800);
       tester.view.devicePixelRatio = 1;
       tester.platformDispatcher.textScaleFactorTestValue = 2;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      await tester.pumpWidget(MaterialApp(theme: AppTheme.light,
-        home: VisitingCardScreen(driver: MockDirectoryRepository().getDrivers().first.copyWith(cardStyle: style))));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: VisitingCardScreen(
+            driver: MockDirectoryRepository().getDrivers().first.copyWith(
+              cardStyle: style,
+            ),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(TransportVisitingCard), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('All five badges render at 64px and export as PNG', (
+  testWidgets('All vehicle badges render at 64px and export as PNG', (
     tester,
   ) async {
     final key = GlobalKey();
@@ -59,7 +69,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(VehicleBadge), findsNWidgets(5));
+    expect(find.byType(VehicleBadge), findsNWidgets(VehicleType.values.length));
     final boundary =
         key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     await tester.runAsync(() async {

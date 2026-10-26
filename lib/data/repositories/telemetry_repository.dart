@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/supabase_config.dart';
 import 'auth_repository.dart';
 
+enum DriverContactMethod { call, whatsapp }
+
 class TelemetryRepository {
   TelemetryRepository({SupabaseClient? client, DateTime Function()? now})
     : _client = client ?? SupabaseConfig.client,
@@ -10,6 +12,19 @@ class TelemetryRepository {
   static final instance = TelemetryRepository();
   final SupabaseClient? _client;
   final DateTime Function() _now;
+  Future<void> logDriverInquiry({
+    required String driverId,
+    required String receiverPhone,
+    required DriverContactMethod method,
+    String? callerPhone,
+    String? callerRole,
+  }) => logCallIntent(
+    callerPhone: callerPhone,
+    receiverPhone: receiverPhone,
+    callerRole: callerRole,
+    contextNote: 'driver_connect:$driverId:${method.name}',
+  );
+
   Future<void> logCallIntent({
     String? callerPhone,
     required String receiverPhone,

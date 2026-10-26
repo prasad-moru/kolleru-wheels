@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/supabase_config.dart';
 import '../models/admin_analytics_model.dart';
+import '../models/driver_verification.dart';
 import 'auth_repository.dart';
 
 class AdminAnalyticsRepository {
@@ -36,7 +39,9 @@ class AdminAnalyticsRepository {
           .then((rows) => rows),
       client
           .from('drivers')
-          .select('base_village_id,is_available')
+          .select(
+            'id,name,phone,base_village_id,vehicle_type,vehicle_number,capacity_tons,is_available,verification_status',
+          )
           .then((rows) => rows),
       client
           .from('load_requests')
@@ -62,6 +67,7 @@ class AdminAnalyticsRepository {
           .select(
             'caller_phone,receiver_phone,caller_role,context_note,created_at',
           )
+          .lte('created_at', now.toIso8601String())
           .order('created_at', ascending: false)
           .limit(50)
           .then((rows) => rows),
@@ -75,5 +81,64 @@ class AdminAnalyticsRepository {
       recentTelemetry: (results[4] as List).cast<Map<String, dynamic>>(),
       now: now,
     );
+  }
+
+  Future<void> reviewDriver(
+    AuthRepository auth, {
+    required String driverId,
+    required DriverVerification decision,
+  }) async {
+    final client = _client;
+    if (decision == DriverVerification.pending || driverId.isEmpty) {
+      throw ArgumentError('Choose an approval decision and driver');
+    }
+    if (client == null || !await auth.isLiveAdmin()) {
+      throw StateError('A live admin session is required');
+    }
+    await client
+        .rpc(
+          'review_kolleru_driver',
+          params: {'driver_id': driverId, 'decision': decision.name},
+        )
+        .timeout(const Duration(seconds: 12));
+  }
+
+  /// Realtime invalidates the authorized snapshot; polling also covers offline
+  /// reconnects and installations where realtime has not been enabled yet.
+  Stream<void> watchChanges(AuthRepository auth) {
+    final client = _client;
+    if (client == null) return const Stream.empty();
+    RealtimeChannel? channel;
+    late final StreamController<void> controller;
+    controller = StreamController<void>(
+      onListen: () async {
+        if (!await auth.isLiveAdmin() ||
+            controller.isClosed ||
+            !controller.hasListener) {
+          return;
+        }
+        channel = client.channel('admin-desk-${identityHashCode(controller)}');
+        for (final table in [
+          'drivers',
+          'call_telemetry',
+          'user_profiles',
+          'load_requests',
+        ]) {
+          channel!.onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: table,
+            callback: (_) {
+              if (!controller.isClosed) controller.add(null);
+            },
+          );
+        }
+        channel!.subscribe();
+      },
+      onCancel: () async {
+        if (channel != null) await client.removeChannel(channel!);
+      },
+    );
+    return controller.stream;
   }
 }

@@ -10,6 +10,7 @@ import '../../core/constants/supabase_config.dart';
 import '../../core/utils/indian_phone_number.dart';
 import '../models/user_profile_model.dart';
 import '../models/local_driver_profile.dart';
+import '../models/driver_verification.dart';
 import 'local_driver_repository.dart';
 import 'supabase_driver_repository.dart';
 
@@ -140,9 +141,7 @@ class AuthRepository extends ChangeNotifier {
   String? get verifiedPhone {
     if (isMock) return _verifiedPhone ?? currentProfile?.phone;
     final raw = _client?.auth.currentUser?.phone;
-    return raw == null
-        ? null
-        : normalizePhone(raw);
+    return raw == null ? null : normalizePhone(raw);
   }
 
   DateTime? _sentAt;
@@ -205,7 +204,8 @@ class AuthRepository extends ChangeNotifier {
     return false;
   }
 
-  static String normalizePhone(String phone) => IndianPhoneNumber.normalize(phone);
+  static String normalizePhone(String phone) =>
+      IndianPhoneNumber.normalize(phone);
 
   Future<void> signInWithOtp({
     required String phone,
@@ -272,7 +272,7 @@ class AuthRepository extends ChangeNotifier {
   Future<UserProfile?> _remoteProfile(String phone) async {
     final row = await _client!
         .from('user_profiles')
-        .select('phone,role,name,village_id')
+        .select('phone,role,name,village_id,base_location')
         .eq('phone', phone)
         .maybeSingle()
         .timeout(const Duration(seconds: 8));
@@ -326,6 +326,7 @@ class AuthRepository extends ChangeNotifier {
     required String name,
     required String role,
     String? villageId,
+    String? baseLocation,
     bool publishSession = true,
   }) async {
     final normalized = normalizePhone(phone);
@@ -338,6 +339,10 @@ class AuthRepository extends ChangeNotifier {
     if (name.trim().length < 2 || name.trim().length > 80) {
       throw const FormatException('Enter your name');
     }
+    if (baseLocation != null &&
+        (baseLocation.trim().length < 2 || baseLocation.trim().length > 80)) {
+      throw const FormatException('Enter a village or base (2–80 characters)');
+    }
     var profile = isMock
         ? await _cachedProfile(normalized)
         : await _remoteProfile(normalized);
@@ -347,6 +352,7 @@ class AuthRepository extends ChangeNotifier {
         name: name.trim(),
         role: role,
         villageId: villageId,
+        baseLocation: baseLocation?.trim(),
       );
       if (!isMock) {
         final row = await _client!
@@ -356,7 +362,7 @@ class AuthRepository extends ChangeNotifier {
               onConflict: 'phone',
               ignoreDuplicates: true,
             )
-            .select('phone,role,name,village_id')
+            .select('phone,role,name,village_id,base_location')
             .maybeSingle()
             .timeout(const Duration(seconds: 8));
         // A concurrent registration must not overwrite an authoritative role.
@@ -381,6 +387,7 @@ class AuthRepository extends ChangeNotifier {
     required String name,
     required String role,
     required String villageId,
+    String? baseLocation,
     LocalDriverProfile? driver,
     Uint8List? avatarBytes,
   }) async {
@@ -395,10 +402,12 @@ class AuthRepository extends ChangeNotifier {
       name: name,
       role: role,
       villageId: villageId,
+      baseLocation: baseLocation,
       publishSession: false,
     );
     if (profile.role == 'driver' && driver != null) {
       if (await resumeExistingDriver(profile)) return profile;
+      driver = driver.copyWith(verification: DriverVerification.pending);
       final driverRepository = SupabaseDriverRepository(client: _client);
       if (avatarBytes != null && !isMock) {
         final avatarUrl = await driverRepository.uploadDriverAvatar(
@@ -560,7 +569,8 @@ class AuthRepository extends ChangeNotifier {
       await prefs.remove(_onboardingKey);
     } finally {
       if (!isMock && _client != null) {
-        await _client.auth.signOut(scope: SignOutScope.local)
+        await _client.auth
+            .signOut(scope: SignOutScope.local)
             .timeout(const Duration(seconds: 8));
       }
     }

@@ -11,10 +11,12 @@ import 'package:kolleru_wheels/data/models/vehicle_type.dart';
 import 'package:kolleru_wheels/data/repositories/mock_directory_repository.dart';
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({
-    'has_seen_welcome': true,
-    'selected_language': 'english',
-  }));
+  setUp(
+    () => SharedPreferences.setMockInitialValues({
+      'has_seen_welcome': true,
+      'selected_language': 'english',
+    }),
+  );
   testWidgets(
     'Selected village displays available drivers in three proximity sections',
     (tester) async {
@@ -33,42 +35,70 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text(AppStrings.tierLocal), 200,
-        scrollable: find.byType(Scrollable).last);
-      expect(find.text(AppStrings.tierLocal), findsOneWidget);
-      await tester.scrollUntilVisible(find.text(AppStrings.tierMandal), 200,
-        scrollable: find.byType(Scrollable).last);
-      expect(find.text(AppStrings.tierMandal), findsOneWidget);
-      await tester.scrollUntilVisible(find.text(AppStrings.tierDelta), 200,
-        scrollable: find.byType(Scrollable).last);
-      expect(find.text(AppStrings.tierDelta), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('In your village'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('In your village'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('In Mandal hub'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('In Mandal hub'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Nearby Mandals'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('Nearby Mandals'), findsOneWidget);
       expect(find.text(AppStrings.busyDrivers), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets('Pinned mandal chips filter current driver locality', (tester) async {
-    await tester.pumpWidget(KolleruWheelsApp(
-      authRepository: AuthRepository(mockMode: true)
-        ..currentProfile = const UserProfile(phone: '+919876543210', role: 'shipper'),
-    ));
+  testWidgets('Pinned mandal chips filter current driver locality', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      KolleruWheelsApp(
+        authRepository: AuthRepository(mockMode: true)
+          ..currentProfile = const UserProfile(
+            phone: '+919876543210',
+            role: 'shipper',
+          ),
+      ),
+    );
     await tester.pumpAndSettle();
     final chip = find.byKey(const ValueKey('mandal-mandavalli'));
     await tester.ensureVisible(chip);
     await tester.tap(chip);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250,
-      scrollable: find.byType(Scrollable).last);
+    await tester.scrollUntilVisible(
+      find.text('Drivers: 1'),
+      250,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(chip.hitTestable(), findsOneWidget);
-    expect(find.text('డ్రైవర్లు / Drivers: 1'), findsOneWidget);
-    await tester.scrollUntilVisible(find.byType(DriverDirectoryCard), 150,
-      scrollable: find.byType(Scrollable).last);
-    expect(tester.widget<DriverDirectoryCard>(find.byType(DriverDirectoryCard)).driver.cardStyle, 'classic_delta');
+    expect(find.text('Drivers: 1'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byType(DriverDirectoryCard),
+      150,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(
+      tester
+          .widget<DriverDirectoryCard>(find.byType(DriverDirectoryCard))
+          .driver
+          .cardStyle,
+      'classic_delta',
+    );
     expect(tester.takeException(), isNull);
   });
 
   test('Unique villages and driver filtering', () {
-    expect(KolleruVillages.all.length, 26);
-    expect(KolleruVillages.all.map((v) => v.id).toSet().length, 26);
+    expect(KolleruVillages.all.length, 27);
+    expect(KolleruVillages.all.map((v) => v.id).toSet().length, 27);
     final repo = MockDirectoryRepository();
     expect(repo.getDrivers().length, 6);
     expect(repo.getDrivers(villageId: 'pulaparru').length, 2);
@@ -97,23 +127,27 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Kolleru Wheels'), findsOneWidget);
+    expect(find.text('Vehicle Directory'), findsOneWidget);
     await tester.ensureVisible(
-      find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
+      find.byKey(const ValueKey('vehicle-boleroPickup')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.widgetWithText(OutlinedButton, VehicleType.boleroPickup.label),
+    await tester.tap(find.byKey(const ValueKey('vehicle-boleroPickup')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Drivers: 1'),
+      250,
+      scrollable: find.byType(Scrollable).last,
     );
+    expect(find.text('Drivers: 1'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Ramesh'),
+      150,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.ensureVisible(find.text('Ramesh'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('డ్రైవర్లు / Drivers: 1'), 250,
-        scrollable: find.byType(Scrollable).last);
-    expect(find.text('డ్రైవర్లు / Drivers: 1'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('రమేష్ / Ramesh'), 150,
-        scrollable: find.byType(Scrollable).last);
-    await tester.ensureVisible(find.text('రమేష్ / Ramesh'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('రమేష్ / Ramesh'));
+    await tester.tap(find.text('Ramesh'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.call), findsOneWidget);
     expect(tester.takeException(), isNull);

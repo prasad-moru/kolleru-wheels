@@ -128,6 +128,18 @@ abstract final class KolleruVillages {
         ),
       ],
     ),
+    Mandal(
+      id: 'bhimavaram',
+      name: 'Bhimavaram',
+      teluguName: 'భీమవరం',
+      villages: [
+        Village(
+          id: 'bhimavaram-town',
+          name: 'Bhimavaram Town',
+          teluguName: 'భీమవరం పట్టణం',
+        ),
+      ],
+    ),
   ];
   static List<Village> get all =>
       List.unmodifiable(mandals.expand((m) => m.villages));

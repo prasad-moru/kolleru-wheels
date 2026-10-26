@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/load_request_model.dart';
 import '../../data/models/vehicle_type.dart';
@@ -113,6 +114,22 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
     super.dispose();
   }
 
+  String _label(BuildContext context, String value) {
+    final language = AppLanguageScope.maybeOf(context);
+    if (language == null) return value;
+    return switch (value) {
+      AppStrings.noLoads => language.tr(
+        te: 'ప్రస్తుతం కొత్త లోడ్ ఆర్డర్లు లేవు',
+        en: 'No active requests nearby',
+      ),
+      AppStrings.loadPool => language.tr(
+        te: 'రైతుల అత్యవసర లోడ్లు',
+        en: 'Urgent Shipper Loads',
+      ),
+      _ => language.label(value),
+    };
+  }
+
   Widget _emptyState(BuildContext context) => Container(
     key: const ValueKey('load-pool-empty'),
     padding: const EdgeInsets.all(24),
@@ -133,7 +150,11 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
           child: const Stack(
             alignment: Alignment.center,
             children: [
-              Icon(Icons.local_shipping_outlined, size: 44, color: Color(0xFF0F5132)),
+              Icon(
+                Icons.local_shipping_outlined,
+                size: 44,
+                color: Color(0xFF0F5132),
+              ),
               Positioned(
                 bottom: 14,
                 right: 10,
@@ -152,12 +173,18 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
           ),
         ),
         const SizedBox(height: 8),
-        const Text(AppStrings.loadMatchHint, textAlign: TextAlign.center),
+        Text(
+          _label(context, AppStrings.loadMatchHint),
+          textAlign: TextAlign.center,
+        ),
         const SizedBox(height: 20),
         OutlinedButton.icon(
           onPressed: refresh,
           icon: const Icon(Icons.refresh),
-          label: const Text(AppStrings.refreshLoads, textAlign: TextAlign.center),
+          label: Text(
+            _label(context, AppStrings.refreshLoads),
+            textAlign: TextAlign.center,
+          ),
         ),
       ],
     ),
@@ -167,13 +194,18 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
   Widget build(BuildContext context) {
     final now = widget.repository.currentTime;
     // Recheck expiry and filters on every build as well as repository refresh.
-    final requests = _requests.where(
-      (request) => request.isActiveAt(now) &&
-          (widget.operationalMandalId == null ||
-              ProximityMatcher.mandalId(request.toVillageId) == widget.operationalMandalId) &&
-          (widget.vehicleType == null || request.vehicleTypeNeeded == null ||
-              request.vehicleTypeNeeded == widget.vehicleType),
-    ).toList();
+    final requests = _requests
+        .where(
+          (request) =>
+              request.isActiveAt(now) &&
+              (widget.operationalMandalId == null ||
+                  ProximityMatcher.mandalId(request.toVillageId) ==
+                      widget.operationalMandalId) &&
+              (widget.vehicleType == null ||
+                  request.vehicleTypeNeeded == null ||
+                  request.vehicleTypeNeeded == widget.vehicleType),
+        )
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -181,7 +213,7 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
           children: [
             Expanded(
               child: Text(
-                AppStrings.loadPool,
+                _label(context, AppStrings.loadPool),
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   color: const Color(0xFF0F172A),
                   fontWeight: FontWeight.w600,
@@ -190,23 +222,28 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
             ),
             IconButton(
               key: const ValueKey('refresh-load-pool'),
-              tooltip: AppStrings.refreshLoads,
+              tooltip: _label(context, AppStrings.refreshLoads),
               onPressed: _loading ? null : refresh,
               icon: const Icon(Icons.refresh, color: Color(0xFF0F5132)),
             ),
           ],
         ),
         const SizedBox(height: 6),
-        const Text(AppStrings.freightBoardHint),
+        Text(_label(context, AppStrings.freightBoardHint)),
         if (widget.operationalMandalId != null) ...[
           const SizedBox(height: 6),
-          const Text(AppStrings.mandalLoadNote),
+          Text(_label(context, AppStrings.mandalLoadNote)),
         ],
         if (widget.repository is SupabaseLoadRequestRepository &&
             (widget.repository as SupabaseLoadRequestRepository).syncPending)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text('ఫోన్‌లో సేవ్ అయింది • సింక్ పెండింగ్ / Saved locally • sync pending'),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              _label(
+                context,
+                'ఫోన్‌లో సేవ్ అయింది • సింక్ పెండింగ్ / Saved locally • sync pending',
+              ),
+            ),
           ),
         const SizedBox(height: 16),
         if (_loading)
@@ -224,13 +261,20 @@ class LoadPoolBoardState extends State<LoadPoolBoard>
             ),
             child: Column(
               children: [
-                const Icon(Icons.cloud_off_outlined, size: 32, color: Color(0xFF475569)),
+                const Icon(
+                  Icons.cloud_off_outlined,
+                  size: 32,
+                  color: Color(0xFF475569),
+                ),
                 const SizedBox(height: 10),
-                const Text(AppStrings.loadFailedPool, textAlign: TextAlign.center),
+                Text(
+                  _label(context, AppStrings.loadFailedPool),
+                  textAlign: TextAlign.center,
+                ),
                 TextButton.icon(
                   onPressed: refresh,
                   icon: const Icon(Icons.refresh),
-                  label: const Text(AppStrings.retry),
+                  label: Text(_label(context, AppStrings.retry)),
                 ),
               ],
             ),

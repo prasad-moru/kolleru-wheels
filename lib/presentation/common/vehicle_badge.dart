@@ -189,6 +189,7 @@ class _VehiclePainter extends CustomPainter {
         line(63, 71, 100, 71);
         wheel(34, 86, 11);
         wheel(91, 86, 11);
+      case VehicleType.miniTruck709:
       case VehicleType.eicher14ft:
         box(47, 40, 62, 43, const Color(0xFFEDA529));
         cab(const [
@@ -207,6 +208,24 @@ class _VehiclePainter extends CustomPainter {
         }
         wheel(29, 87, 11);
         wheel(82, 87, 11);
+        wheel(101, 87, 11);
+      case VehicleType.tipper:
+        cab(const [
+          Offset(10, 82),
+          Offset(10, 45),
+          Offset(39, 45),
+          Offset(48, 82),
+        ], const Color(0xFF0A6836));
+        box(17, 49, 20, 18, glass);
+        cab(const [
+          Offset(49, 48),
+          Offset(109, 35),
+          Offset(103, 76),
+          Offset(49, 82),
+        ], AppColors.amber);
+        line(50, 84, 108, 84, ink, 4);
+        wheel(27, 87, 11);
+        wheel(79, 87, 11);
         wheel(101, 87, 11);
       case VehicleType.tractor:
         // Rear wheel is close to the trailer; bonnet faces left.

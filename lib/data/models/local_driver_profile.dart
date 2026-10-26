@@ -1,6 +1,7 @@
 import '../../core/constants/villages.dart';
 import 'driver_model.dart';
 import 'vehicle_type.dart';
+import 'driver_verification.dart';
 
 /// Persisted driver data uses stable village IDs and enum names.
 class LocalDriverProfile {
@@ -17,7 +18,9 @@ class LocalDriverProfile {
     required this.isAvailable,
     String? currentSpotLabel,
     this.avatarUrl,
+    this.baseLocation,
     this.isPhoneVerified = false,
+    this.verification = DriverVerification.approved,
     this.cardStyle = 'classic_delta',
   }) : specializations = List.unmodifiable(specializations),
        currentSpotLabel = currentSpotLabel ?? currentSpotVillage.label;
@@ -35,7 +38,9 @@ class LocalDriverProfile {
   final String vehicleNumber;
   final bool isAvailable;
   final String? avatarUrl;
+  final String? baseLocation;
   final bool isPhoneVerified;
+  final DriverVerification verification;
 
   factory LocalDriverProfile.fromDriverModel(DriverModel driver) {
     final spot =
@@ -53,7 +58,9 @@ class LocalDriverProfile {
       vehicleNumber: driver.vehicleNumber,
       isAvailable: driver.isAvailable,
       avatarUrl: driver.avatarUrl,
+      baseLocation: driver.baseLocation,
       isPhoneVerified: driver.isPhoneVerified,
+      verification: driver.verification,
       cardStyle: driver.cardStyle,
     );
     return LocalDriverProfile.fromJson(profile.toJson());
@@ -65,7 +72,9 @@ class LocalDriverProfile {
     Village? currentSpotVillage,
     String? currentSpotLabel,
     String? avatarUrl,
+    String? baseLocation,
     bool? isPhoneVerified,
+    DriverVerification? verification,
   }) => LocalDriverProfile(
     cardStyle: cardStyle ?? this.cardStyle,
     id: id,
@@ -84,7 +93,9 @@ class LocalDriverProfile {
     vehicleNumber: vehicleNumber,
     isAvailable: isAvailable ?? this.isAvailable,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    baseLocation: baseLocation ?? this.baseLocation,
     isPhoneVerified: isPhoneVerified ?? this.isPhoneVerified,
+    verification: verification ?? this.verification,
   );
 
   DriverModel toDriverModel() => DriverModel(
@@ -102,7 +113,9 @@ class LocalDriverProfile {
     vehicleNumber: vehicleNumber,
     specializations: specializations,
     avatarUrl: avatarUrl,
+    baseLocation: baseLocation,
     isPhoneVerified: isPhoneVerified,
+    verification: verification,
   );
 
   Map<String, Object?> toJson() => {
@@ -120,7 +133,9 @@ class LocalDriverProfile {
     'vehicleNumber': vehicleNumber,
     'isAvailable': isAvailable,
     'avatarUrl': avatarUrl,
+    'baseLocation': baseLocation,
     'isPhoneVerified': isPhoneVerified,
+    'verificationStatus': verification.name,
   };
 
   factory LocalDriverProfile.fromJson(Map<String, dynamic> json) {
@@ -149,7 +164,9 @@ class LocalDriverProfile {
       vehicleNumber: json['vehicleNumber'] as String,
       isAvailable: json['isAvailable'] as bool,
       avatarUrl: json['avatarUrl'] as String?,
+      baseLocation: json['baseLocation'] as String?,
       isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
+      verification: DriverVerification.fromValue(json['verificationStatus']),
     );
     if (profile.id.isEmpty ||
         profile.name.trim().isEmpty ||

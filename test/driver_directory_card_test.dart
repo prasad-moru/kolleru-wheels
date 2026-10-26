@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:kolleru_wheels/core/constants/app_strings.dart';
 import 'package:kolleru_wheels/core/theme/app_theme.dart';
 import 'package:kolleru_wheels/core/theme/driver_card_style.dart';
 import 'package:kolleru_wheels/data/models/driver_model.dart';
@@ -33,30 +32,34 @@ void main() {
       final driver = MockDirectoryRepository().getDrivers().first.copyWith(
         cardStyle: palette.id,
       );
-      await tester.pumpWidget(MaterialApp(
-        theme: AppTheme.light,
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: DriverDirectoryCard(
-              driver: driver,
-              onOpen: () {},
-              onWhatsApp: () {},
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: DriverDirectoryCard(
+                driver: driver,
+                onOpen: () {},
+                onWhatsApp: () {},
+              ),
             ),
           ),
         ),
-      ));
+      );
       final strip = tester.widget<Container>(
         find.byKey(ValueKey('style-strip-${driver.id}')),
       );
       expect(strip.color, palette.accent);
       final material = tester.widget<Material>(
-        find.descendant(
-          of: find.byType(DriverDirectoryCard),
-          matching: find.byType(Material),
-        ).first,
+        find
+            .descendant(
+              of: find.byType(DriverDirectoryCard),
+              matching: find.byType(Material),
+            )
+            .first,
       );
       expect(material.color, Colors.white);
-      expect(find.text(driver.name), findsOneWidget);
+      expect(find.text(driver.name.split(' / ').first), findsOneWidget);
       expect(find.byKey(ValueKey('availability-${driver.id}')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -83,21 +86,31 @@ void main() {
         DateTime.utc(2026, 10, 12),
       ),
     );
+    final auth = AuthRepository(mockMode: true)
+      ..currentProfile = const UserProfile(
+        phone: '+919999999999',
+        role: 'shipper',
+      );
+    addTearDown(auth.dispose);
     var opened = 0;
     var chats = 0;
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.light,
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: DriverDirectoryCard(
-            driver: driver,
-            callerPhone: '+919999999999',
-            onOpen: () => opened++,
-            onWhatsApp: () => chats++,
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DriverDirectoryCard(
+              driver: driver,
+              callerPhone: '+919999999999',
+              authRepository: auth,
+              launcher: (_) async => true,
+              onOpen: () => opened++,
+              onWhatsApp: () => chats++,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     final call = tester.widget<CallButton>(find.byType(CallButton));
     expect(call.phone, driver.phone);
@@ -105,11 +118,19 @@ void main() {
     expect(call.callerRole, 'shipper');
     expect(call.contextNote, 'directory:${driver.id}');
     expect(find.byIcon(Icons.verified), findsOneWidget);
-    await tester.tap(find.text(driver.name));
+    await tester.tap(find.text(driver.name.split(' / ').first));
     expect(opened, 1);
     final whatsapp = find.byKey(ValueKey('whatsapp-${driver.id}'));
     await tester.ensureVisible(whatsapp);
     await tester.tap(whatsapp);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('direct-call-sheet')), findsOneWidget);
+    expect(chats, 0);
+    final action = find.byKey(const ValueKey('modal-whatsapp-button'));
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
+    await tester.tap(action);
+    await tester.pumpAndSettle();
     expect(chats, 1);
     expect(opened, 1);
     expect(tester.takeException(), isNull);
@@ -124,68 +145,77 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.light,
-      home: Scaffold(
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: DriverDirectoryCard(
-            driver: MockDirectoryRepository().getDrivers().first,
-            onOpen: () {},
-            onWhatsApp: () {},
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: DriverDirectoryCard(
+              driver: MockDirectoryRepository().getDrivers().first,
+              onOpen: () {},
+              onWhatsApp: () {},
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text(AppStrings.whatsapp));
+    await tester.ensureVisible(find.text('వాట్సాప్'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Initial fetch shows skeletons and settles into directory cards', (
-    tester,
-  ) async {
-    final remote = PendingDirectoryRepository();
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.light,
-      home: HomeDirectoryScreen(
-        repository: MockDirectoryRepository(),
-        remoteDriverRepository: remote,
-        authRepository: AuthRepository(mockMode: true)
-          ..currentProfile = const UserProfile(
-            phone: '+919999999999',
-            role: 'shipper',
+  testWidgets(
+    'Initial fetch shows skeletons and settles into directory cards',
+    (tester) async {
+      final remote = PendingDirectoryRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: HomeDirectoryScreen(
+            repository: MockDirectoryRepository(),
+            remoteDriverRepository: remote,
+            authRepository: AuthRepository(mockMode: true)
+              ..currentProfile = const UserProfile(
+                phone: '+919999999999',
+                role: 'shipper',
+              ),
           ),
-      ),
-    ));
-    await tester.scrollUntilVisible(
-      find.byType(DirectoryLoadingState),
-      250,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(find.byType(DirectoryLoadingState), findsOneWidget);
-    expect(find.byType(DriverDirectoryCard), findsNothing);
-    remote.result.complete(MockDirectoryRepository().getDrivers(availableOnly: true));
-    await tester.pumpAndSettle();
-    expect(find.byType(DirectoryLoadingState), findsNothing);
-    expect(find.byType(DriverDirectoryCard), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+        ),
+      );
+      await tester.scrollUntilVisible(
+        find.byType(DirectoryLoadingState),
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(DirectoryLoadingState), findsOneWidget);
+      expect(find.byType(DriverDirectoryCard), findsNothing);
+      remote.result.complete(
+        MockDirectoryRepository().getDrivers(availableOnly: true),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(DirectoryLoadingState), findsNothing);
+      expect(find.byType(DriverDirectoryCard), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('Empty locality offers a working filter reset', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.light,
-      home: HomeDirectoryScreen(
-        repository: MockDirectoryRepository(),
-        authRepository: AuthRepository(mockMode: true)
-          ..currentProfile = const UserProfile(
-            phone: '+919999999999',
-            role: 'shipper',
-          ),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: HomeDirectoryScreen(
+          repository: MockDirectoryRepository(),
+          authRepository: AuthRepository(mockMode: true)
+            ..currentProfile = const UserProfile(
+              phone: '+919999999999',
+              role: 'shipper',
+            ),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     final akividu = find.byKey(const ValueKey('mandal-akividu'));
     await tester.ensureVisible(akividu);
@@ -196,14 +226,19 @@ void main() {
       250,
       scrollable: find.byType(Scrollable).last,
     );
-    final resetFinder = find.text(AppStrings.reset);
+    final resetFinder = find.text('ఫిల్టర్లు తొలగించండి');
     await tester.ensureVisible(resetFinder);
     await tester.pumpAndSettle();
     await tester.tap(resetFinder);
     await tester.pumpAndSettle();
     expect(find.byType(DirectoryEmptyState), findsNothing);
     expect(find.byType(DriverDirectoryCard), findsWidgets);
-    expect(tester.widget<ChoiceChip>(find.byKey(const ValueKey('mandal-all'))).selected, isTrue);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const ValueKey('mandal-all')))
+          .selected,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/localization/app_language_provider.dart';
 import '../../core/constants/villages.dart';
 import '../../core/utils/proximity_matcher.dart';
 import '../../data/models/vehicle_type.dart';
@@ -14,9 +14,8 @@ import '../../data/repositories/load_request_repository.dart';
 import '../../data/repositories/mock_directory_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../auth/session_router.dart';
-import '../common/audio_cue_button.dart';
+import '../directory/widgets/connect_gate.dart';
 import '../common/driver_directory_card.dart';
-import '../common/vehicle_badge.dart';
 import '../driver/visiting_card_screen.dart';
 import 'post_load_bottom_sheet.dart';
 import 'directory_states.dart';
@@ -41,7 +40,8 @@ class HomeDirectoryScreen extends StatefulWidget {
   State<HomeDirectoryScreen> createState() => _HomeDirectoryScreenState();
 }
 
-class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
+class _HomeDirectoryScreenState
+    extends LanguageAwareState<HomeDirectoryScreen> {
   late final DirectoryRepository _repository;
   late final AuthRepository _auth;
   List<DriverModel>? _liveDrivers;
@@ -51,8 +51,15 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
   String? _villageId;
   String? _mandalId;
   VehicleType? _vehicle;
-  final bool _availableOnly = true;
   bool _selectionChanged = false;
+  static const _green = Color(0xFF0A6836);
+  final _search = TextEditingController();
+  bool _searching = false;
+  int _tab = 0;
+  List<String> _history = [];
+  String? _historyIdentity;
+  String get _historyKey =>
+      'directory_calls_${_auth.currentProfile?.phone ?? 'guest'}';
   static const _preferenceKey = 'directory_village_id';
   @override
   void initState() {
@@ -60,6 +67,7 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     _repository = widget.repository ?? MockDirectoryRepository();
     _auth = widget.authRepository ?? AuthRepository.instance;
     _auth.addListener(_identityChanged);
+    _historyIdentity = _historyKey;
     _remoteDrivers =
         widget.remoteDriverRepository ?? SupabaseDriverRepository.instance;
     if (_auth.currentProfile?.role != 'shipper' && !_auth.isGuest) return;
@@ -67,15 +75,23 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
       _fetchDrivers();
     }
     _restoreVillage();
+    _restoreHistory();
   }
 
   void _identityChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_historyIdentity != _historyKey) {
+      _historyIdentity = _historyKey;
+      _history = [];
+      _restoreHistory();
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
     _auth.removeListener(_identityChanged);
+    _search.dispose();
     super.dispose();
   }
 
@@ -134,7 +150,9 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
             future: repository.getActiveRequests(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return const Center(child: Text(AppStrings.loadFailed));
+                return Center(
+                  child: Text(language.label(AppStrings.loadFailed)),
+                );
               }
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
@@ -145,14 +163,19 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
               return ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  const Text('My Posted Loads'),
-                  if (requests.isEmpty) const Text('No active posts'),
+                  Text(
+                    tr(te: 'నేను పోస్ట్ చేసిన లోడ్లు', en: 'My Posted Loads'),
+                  ),
+                  if (requests.isEmpty)
+                    Text(
+                      tr(te: 'ప్రస్తుతం లోడ్లు లేవు', en: 'No active posts'),
+                    ),
                   for (final request in requests)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          '${request.fromLocation} -> ${request.toVillage.label}\n${request.materialType}',
+                          '${request.fromLocation} -> ${tr(te: request.toVillage.teluguName, en: request.toVillage.name)}\n${request.materialType}',
                         ),
                       ),
                     ),
@@ -189,8 +212,11 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         SnackBar(
           content: Text(
             pending
-                ? 'ఫోన్‌లో సేవ్ అయింది / Saved locally. Waiting for cloud sync.'
-                : AppStrings.postedNeed,
+                ? tr(
+                    te: 'ఫోన్‌లో సేవ్ అయింది. క్లౌడ్ సమకాలీకరణ కోసం వేచి ఉంది.',
+                    en: 'Saved locally. Waiting for cloud sync.',
+                  )
+                : language.label(AppStrings.postedNeed),
           ),
         ),
       );
@@ -227,81 +253,319 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     }
   }
 
-  Future<void> _whatsapp(DriverModel driver) async {
-    final digits = driver.phone.replaceAll(RegExp(r'[^0-9]'), '');
-    final phone = digits.length == 10 ? '91$digits' : digits;
-    try {
-      if (await launchUrl(
-        Uri.https('wa.me', '/$phone'),
-        mode: LaunchMode.externalApplication,
-      )) {
-        return;
-      }
-    } catch (_) {
-      // Report platform failures below.
-    }
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
-        ),
-      );
-    }
-  }
-
   void _resetFilters() {
     setState(() {
       _vehicle = null;
       _mandalId = null;
+      _search.clear();
     });
     _selectVillage(null);
   }
 
-  Widget _mandalFilters() => Material(
-    color: Theme.of(context).scaffoldBackgroundColor,
-    child: SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          for (final id in <String?>[
-            null, 'kaikaluru', 'mandavalli', 'akividu', 'kalidindi',
-          ])
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                key: ValueKey('mandal-${id ?? 'all'}'),
-                label: Text(
-                  id == null
-                      ? 'అన్నీ / All'
-                      : id == 'kalidindi'
-                      ? 'కలిదిండి / Kalidindi'
-                      : '${KolleruVillages.mandals.firstWhere((m) => m.id == id).teluguName} / ${KolleruVillages.mandals.firstWhere((m) => m.id == id).name}',
-                ),
-                selected: _mandalId == id,
-                showCheckmark: false,
-                backgroundColor: Colors.white,
-                selectedColor: const Color(0xFF0F5132),
-                surfaceTintColor: Colors.transparent,
-                elevation: _mandalId == id ? 2 : 0,
-                shadowColor: const Color(0x220F5132),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                labelStyle: TextStyle(
-                  color: _mandalId == id ? Colors.white : const Color(0xFF475569),
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                side: BorderSide(
-                  color: _mandalId == id ? const Color(0xFF0F5132) : const Color(0xFFE2E8F0),
-                  width: 0.8,
-                ),
-                onSelected: (_) => setState(() => _mandalId = id),
+  Future<bool> _requireContact() async {
+    if (!_auth.isGuest && _auth.currentProfile != null) return true;
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => AppLanguageScope(
+        language: language,
+        child: ConnectGate(auth: _auth),
+      ),
+    );
+    if (!mounted) return false;
+    if (_auth.onboardingPhone != null) {
+      _openSignIn();
+      return false;
+    }
+    return result == true && _auth.currentProfile != null;
+  }
+
+  Future<void> _restoreHistory() async {
+    final key = _historyKey;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted && key == _historyKey) {
+        setState(() => _history = prefs.getStringList(key) ?? []);
+      }
+    } catch (_) {
+      /* Call history is optional offline storage. */
+    }
+  }
+
+  Future<void> _rememberCall(DriverModel driver) async {
+    setState(
+      () => _history = [
+        driver.id,
+        ..._history.where((id) => id != driver.id),
+      ].take(30).toList(),
+    );
+    try {
+      await (await SharedPreferences.getInstance()).setStringList(
+        _historyKey,
+        _history,
+      );
+    } catch (_) {
+      /* Keep this session's history if storage is unavailable. */
+    }
+  }
+
+  Widget _chip({
+    required Key key,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) => Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: ChoiceChip(
+      key: key,
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      backgroundColor: Colors.white,
+      selectedColor: _green,
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : _green,
+        fontWeight: FontWeight.w600,
+      ),
+      shape: const StadiumBorder(),
+      side: const BorderSide(color: Color(0xFFBDE5CE)),
+      onSelected: (_) => onTap(),
+    ),
+  );
+
+  Widget _mandalFilters() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: Row(
+      children: [
+        for (final id in <String?>[
+          null,
+          'kaikaluru',
+          'akividu',
+          'bhimavaram',
+          'mandavalli',
+          'kalidindi',
+        ])
+          _chip(
+            key: ValueKey('mandal-${id ?? 'all'}'),
+            label: id == null
+                ? tr(te: 'అన్నీ', en: 'All')
+                : tr(
+                    te: KolleruVillages.mandals
+                        .firstWhere((m) => m.id == id)
+                        .teluguName,
+                    en: KolleruVillages.mandals
+                        .firstWhere((m) => m.id == id)
+                        .name,
+                  ),
+            selected: _mandalId == id,
+            onTap: () {
+              setState(() => _mandalId = id);
+              _selectVillage(null);
+            },
+          ),
+      ],
+    ),
+  );
+
+  String _vehicleLabel(VehicleType type) => switch (type) {
+    VehicleType.boleroPickup => tr(te: 'బొలెరో 2.5ట', en: 'Bolero 2.5T'),
+    VehicleType.miniTruck709 => tr(
+      te: '709 మినీ లారీ 5ట',
+      en: '709 Mini Truck 5T',
+    ),
+    VehicleType.tipper => tr(te: 'టిప్పర్ 8ట+', en: 'Tipper 8T+'),
+    _ => tr(te: type.teluguName, en: type.englishName),
+  };
+
+  Widget _vehicleFilters() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: Row(
+      children: [
+        for (final type in [
+          VehicleType.boleroPickup,
+          VehicleType.miniTruck709,
+          VehicleType.tipper,
+          VehicleType.tataAce,
+          VehicleType.dost,
+          VehicleType.eicher14ft,
+          VehicleType.tractor,
+        ])
+          _chip(
+            key: ValueKey('vehicle-${type.name}'),
+            label: _vehicleLabel(type),
+            selected: _vehicle == type,
+            onTap: () =>
+                setState(() => _vehicle = _vehicle == type ? null : type),
+          ),
+      ],
+    ),
+  );
+
+  Widget _header() => Row(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: _green,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Text(
+          'KW',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+          ),
+        ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              tr(te: 'వాహనాల డైరెక్టరీ', en: 'Vehicle Directory'),
+              style: const TextStyle(
+                color: _green,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
+            Text(
+              tr(
+                te: 'కొల్లేరు వీల్స్ • డెల్టా రవాణా',
+                en: 'Kolleru Wheels • Delta Transport',
+              ),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF365B47)),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _languageToggle() => OutlinedButton(
+    key: const ValueKey('language-toggle'),
+    onPressed: language.toggleLanguage,
+    style: OutlinedButton.styleFrom(
+      foregroundColor: _green,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      shape: const StadiumBorder(),
+    ),
+    child: Text(tr(te: '🌐 EN', en: '🌐 తెలుగు')),
+  );
+
+  Widget _drawer() => Drawer(
+    child: SafeArea(
+      child: ListView(
+        children: [
+          if (_auth.isGuest)
+            ListTile(
+              key: const ValueKey('guest-sign-in'),
+              leading: const Icon(Icons.login),
+              title: Text(language.label(AppStrings.signIn)),
+              onTap: () {
+                Navigator.of(context).pop();
+                _openSignIn();
+              },
+            )
+          else ...[
+            ListTile(
+              key: const ValueKey('farmer-profile'),
+              leading: const Icon(Icons.person),
+              title: Text(language.label(_auth.currentProfile!.name)),
+              subtitle: Text(_auth.currentProfile!.phone),
+            ),
+            ListTile(
+              key: const ValueKey('my-posted-loads'),
+              leading: const Icon(Icons.inventory),
+              title: Text(
+                tr(te: 'నేను పోస్ట్ చేసిన లోడ్లు', en: 'My Posted Loads'),
+              ),
+              onTap: () {
+                Navigator.of(context).pop();
+                _myLoads();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('drawer-logout'),
+              leading: const Icon(Icons.logout),
+              title: Text(tr(te: 'లాగ్ అవుట్', en: 'Logout')),
+              onTap: () {
+                Navigator.of(context).pop();
+                _logout();
+              },
+            ),
+          ],
         ],
       ),
     ),
+  );
+
+  Widget _profile() => ListView(
+    key: const ValueKey('directory-profile'),
+    padding: const EdgeInsets.all(24),
+    children: [
+      const Icon(Icons.person_outline, size: 48, color: _green),
+      const SizedBox(height: 16),
+      Text(
+        _auth.isGuest
+            ? tr(te: 'అతిథి', en: 'Guest')
+            : language.label(_auth.currentProfile!.name),
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      if (_auth.currentProfile != null) Text(_auth.currentProfile!.phone),
+      const SizedBox(height: 16),
+      if (_auth.isGuest)
+        FilledButton(
+          onPressed: _openSignIn,
+          child: Text(language.label(AppStrings.signIn)),
+        )
+      else ...[
+        OutlinedButton(
+          onPressed: _myLoads,
+          child: Text(
+            tr(te: 'నేను పోస్ట్ చేసిన లోడ్లు', en: 'My Posted Loads'),
+          ),
+        ),
+        OutlinedButton(
+          onPressed: _logout,
+          child: Text(tr(te: 'లాగ్ అవుట్', en: 'Logout')),
+        ),
+      ],
+    ],
+  );
+
+  Widget _callHistory(List<DriverModel> drivers) => ListView(
+    key: const ValueKey('directory-call-history'),
+    padding: const EdgeInsets.all(20),
+    children: [
+      Text(
+        tr(te: 'నా కాల్స్', en: 'Call History'),
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        tr(
+          te: 'ఈ ఫోన్ నుంచి డయలర్‌లో తెరిచిన పరిచయాలు.',
+          en: 'Contacts opened in the dialer from this device.',
+        ),
+      ),
+      const SizedBox(height: 16),
+      if (_history.isEmpty)
+        Text(tr(te: 'ఇంకా కాల్స్ లేవు', en: 'No calls yet')),
+      for (final id in _history)
+        for (final driver in drivers.where((d) => d.id == id))
+          ListTile(
+            leading: const Icon(Icons.call_outlined, size: 24, color: _green),
+            title: Text(language.label(driver.name)),
+            subtitle: Text(driver.phone),
+          ),
+    ],
   );
 
   @override
@@ -309,24 +573,36 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
     if (_auth.currentProfile?.role != 'shipper' && !_auth.isGuest) {
       return SessionRouter(repository: _auth);
     }
-    final drivers = [
-      ...(_liveDrivers?.isNotEmpty == true
-          ? _liveDrivers!.where(
-              (d) =>
-                  (_vehicle == null || d.vehicleType == _vehicle) &&
-                  (!_availableOnly || d.isAvailable),
-            )
-          : _repository.getDrivers(
-              vehicleType: _vehicle,
-              availableOnly: _availableOnly,
-            )),
-    ];
-    drivers.removeWhere(
-      (driver) => _mandalId != null &&
-          ProximityMatcher.mandalId(
-            driver.currentSpotVillageId ?? driver.village.id,
-          ) != _mandalId,
-    );
+    // With no configured backend and no cache, retain the offline demo directory.
+    final demoFallback =
+        _liveDrivers?.isEmpty == true &&
+        !_remoteDrivers.isConfigured &&
+        widget.remoteDriverRepository == null;
+    final allDrivers = demoFallback
+        ? _repository.getDrivers()
+        : _liveDrivers ?? _repository.getDrivers();
+    final query = _search.text.trim().toLowerCase();
+    final drivers = allDrivers
+        .where(
+          (d) =>
+              d.isPubliclyAvailable &&
+              (_vehicle == null || d.vehicleType == _vehicle) &&
+              (_mandalId == null ||
+                  ProximityMatcher.mandalId(
+                        d.currentSpotVillageId ?? d.village.id,
+                      ) ==
+                      _mandalId) &&
+              (query.isEmpty ||
+                  [
+                    d.name,
+                    d.vehicleNumber,
+                    d.village.name,
+                    d.village.teluguName,
+                    d.vehicleType.englishName,
+                    d.vehicleType.teluguName,
+                  ].any((text) => text.toLowerCase().contains(query))),
+        )
+        .toList();
     final headings = <String, String>{};
     if (_villageId != null) {
       final result = ProximityMatcher.match(
@@ -334,265 +610,299 @@ class _HomeDirectoryScreenState extends State<HomeDirectoryScreen> {
         KolleruVillages.find(_villageId)!,
       );
       final sections = {
-        AppStrings.tierLocal: result.tier1,
-        AppStrings.tierMandal: result.tier2,
-        AppStrings.tierDelta: result.tier3,
+        tr(te: 'మీ ఊరిలోనే ఉన్న వాహనాలు', en: 'In your village'): result.tier1,
+        tr(te: 'మండల కేంద్రంలో అందుబాటులో ఉన్నవి', en: 'In Mandal hub'):
+            result.tier2,
+        tr(te: 'చుట్టుపక్కల మండలాలు', en: 'Nearby Mandals'): result.tier3,
       };
       for (final section in sections.entries) {
         if (section.value.isNotEmpty) {
           headings[section.value.first.id] = section.key;
         }
       }
-      final busy = drivers.where((d) => !d.isAvailable).toList();
-      if (busy.isNotEmpty) headings[busy.first.id] = AppStrings.busyDrivers;
       drivers
         ..clear()
-        ..addAll([...result.tier1, ...result.tier2, ...result.tier3])
-        ..addAll(busy);
+        ..addAll([...result.tier1, ...result.tier2, ...result.tier3]);
     }
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Kolleru Wheels'),
-        actions: [
-          IconButton(
-            tooltip: 'రిఫ్రెష్ / Refresh',
-            onPressed: _remoteLoading ? null : _fetchDrivers,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      drawer: Drawer(
-        child: SafeArea(
-          child: ListView(
-            children: [
-              if (_auth.isGuest)
-                ListTile(
-                  key: const ValueKey('guest-sign-in'),
-                  leading: const Icon(Icons.login),
-                  title: const Text(AppStrings.signIn),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _openSignIn();
-                  },
-                )
-              else ...[
-                ListTile(
-                  key: const ValueKey('farmer-profile'),
-                  leading: const Icon(Icons.person),
-                  title: Text(_auth.currentProfile!.name),
-                  subtitle: Text(_auth.currentProfile!.phone),
-                ),
-                ListTile(
-                  key: const ValueKey('my-posted-loads'),
-                  leading: const Icon(Icons.inventory),
-                  title: const Text('My Posted Loads'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _myLoads();
-                  },
-                ),
-                ListTile(
-                  key: const ValueKey('drawer-logout'),
-                  leading: const Icon(Icons.logout),
-                  title: const Text('Logout'),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _logout();
-                  },
-                ),
-              ],
-            ],
-          ),
+    final stackedHeader =
+        MediaQuery.sizeOf(context).width <
+        650 * MediaQuery.textScalerOf(context).scale(14) / 14;
+    final controls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          key: const ValueKey('directory-search'),
+          constraints: const BoxConstraints.tightFor(width: 40, height: 48),
+          tooltip: tr(te: 'వెతకండి', en: 'Search'),
+          onPressed: () => setState(() {
+            _searching = !_searching;
+            if (!_searching) _search.clear();
+          }),
+          icon: const Icon(Icons.search, size: 24),
         ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _mandalFilters(),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(Icons.eco_outlined, color: Color(0xFF0F5132)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          AppStrings.directory,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF0F172A),
+        _languageToggle(),
+      ],
+    );
+    return AppLanguageScope(
+      language: language,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF2F7F4),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          automaticallyImplyLeading: false,
+          toolbarHeight: stackedHeader
+              ? 128 *
+                    (MediaQuery.textScalerOf(context).scale(14) / 14).clamp(
+                      1,
+                      2,
+                    )
+              : 88,
+          title: stackedHeader
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Builder(
+                          builder: (context) => IconButton(
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                              height: 48,
+                            ),
+                            tooltip: MaterialLocalizations.of(context)
+                                .openAppDrawerTooltip,
+                            onPressed: () => Scaffold.of(context).openDrawer(),
+                            icon: const Icon(Icons.menu, size: 24),
                           ),
                         ),
+                        const Spacer(),
+                        controls,
+                      ],
+                    ),
+                  ],
+                )
+              : _header(),
+          actions: stackedHeader
+              ? null
+              : [
+                  Builder(
+                    builder: (context) => IconButton(
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 48,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(AppStrings.directoryHint),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    key: const ValueKey('post-urgent-load'),
-                    onPressed: _postLoad,
-                    icon: const Icon(Icons.campaign, size: 28),
-                    label: Text(
-                      _auth.isGuest ? AppStrings.signInToPost : AppStrings.urgentLoad,
-                      textAlign: TextAlign.center,
+                      tooltip: MaterialLocalizations.of(context)
+                          .openAppDrawerTooltip,
+                      onPressed: () => Scaffold.of(context).openDrawer(),
+                      icon: const Icon(Icons.menu, size: 24),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (_remoteLoading && _liveDrivers != null)
-                    const LinearProgressIndicator(),
-                  if (!_remoteLoading || _liveDrivers != null)
-                    Text(
-                      _liveDrivers?.isNotEmpty == true
-                          ? (_cachedDrivers
-                                ? 'సేవ్ చేసిన వాహనాలు / Cached drivers'
-                                : 'లైవ్ వాహనాలు / Live drivers')
-                          : AppStrings.demo,
-                    ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_villageId),
-                    initialValue: _villageId ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: AppStrings.village),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text(AppStrings.allVillages),
-                      ),
-                      for (final mandal in KolleruVillages.mandals)
-                        for (final village in mandal.villages)
-                          DropdownMenuItem(
-                            value: village.id,
-                            child: Text(
-                              '${village.label} (${mandal.name})',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                    ],
-                    onChanged: (value) => _selectVillage(value == '' ? null : value),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    AppStrings.chooseVehicle,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 10),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.maxWidth >= 600
-                          ? 3
-                          : constraints.maxWidth >= 340 &&
-                                MediaQuery.textScalerOf(context).scale(18) <= 24
-                          ? 2
-                          : 1;
-                      final width =
-                          (constraints.maxWidth - (columns - 1) * 12) / columns;
-                      return Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          for (final type in VehicleType.values)
-                            SizedBox(
-                              width: width,
-                              child: Semantics(
-                                selected: _vehicle == type,
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    backgroundColor: _vehicle == type
-                                        ? const Color(0xFFECFDF5)
-                                        : Colors.white,
-                                    foregroundColor: _vehicle == type
-                                        ? const Color(0xFF0F5132)
-                                        : const Color(0xFF475569),
-                                    side: BorderSide(
-                                      color: _vehicle == type
-                                          ? const Color(0xFF059669)
-                                          : const Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  onPressed: () => setState(
-                                    () => _vehicle = _vehicle == type ? null : type,
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      VehicleBadge(type: type, size: 64),
-                                      const SizedBox(height: 8),
-                                      Text(type.label, textAlign: TextAlign.center),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => _vehicle = null),
-                    child: const Text(AppStrings.allVehicles),
-                  ),
-                  const AudioCueButton(),
-                  const SizedBox(height: 20),
-                  Text(
-                    _remoteLoading && _liveDrivers == null
-                        ? AppStrings.loadingDrivers
-                        : 'డ్రైవర్లు / Drivers: ${drivers.length}',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  if (_remoteLoading && _liveDrivers == null)
-                    const DirectoryLoadingState()
-                  else if (drivers.isEmpty)
-                    DirectoryEmptyState(onReset: _resetFilters),
-                  if (!_remoteLoading || _liveDrivers != null)
-                    for (final driver in drivers) ...[
-                      if (headings.containsKey(driver.id))
-                        Container(
-                          margin: const EdgeInsets.only(top: 20, bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDFF4E8),
-                            border: Border.all(
-                              color: const Color(0xFFD1FAE5),
-                              width: 0.5,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            headings[driver.id]!,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: DriverDirectoryCard(
-                          key: ValueKey('directory-driver-${driver.id}'),
-                          driver: driver,
-                          callerPhone: _auth.currentProfile?.phone,
-                          callerRole: _auth.isGuest ? 'guest' : 'shipper',
-                          onOpen: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => VisitingCardScreen(driver: driver),
-                            ),
-                          ),
-                          onWhatsApp: () => _whatsapp(driver),
-                        ),
-                      ),
-                    ],
+                  controls,
                 ],
+        ),
+        drawer: _drawer(),
+        bottomNavigationBar: NavigationBar(
+          key: const ValueKey('directory-bottom-navigation'),
+          selectedIndex: _tab,
+          backgroundColor: Colors.white,
+          indicatorColor: const Color(0xFFDDF3E6),
+          onDestinationSelected: (tab) => setState(() => _tab = tab),
+          destinations: [
+            NavigationDestination(
+              key: const ValueKey('nav-vehicles'),
+              icon: Icon(
+                Icons.local_shipping_outlined,
+                size: 24,
+                color: _tab == 0 ? _green : const Color(0xFF52675B),
               ),
+              label: tr(te: 'వాహనాలు', en: 'Vehicles'),
+            ),
+            NavigationDestination(
+              key: const ValueKey('nav-call-history'),
+              icon: Icon(
+                Icons.history,
+                size: 24,
+                color: _tab == 1 ? _green : const Color(0xFF52675B),
+              ),
+              label: tr(te: 'నా కాల్స్', en: 'Call History'),
+            ),
+            NavigationDestination(
+              key: const ValueKey('nav-profile'),
+              icon: Icon(
+                Icons.person_outline,
+                size: 24,
+                color: _tab == 2 ? _green : const Color(0xFF52675B),
+              ),
+              label: tr(te: 'ప్రొఫైల్', en: 'Profile'),
             ),
           ],
+        ),
+        body: SafeArea(
+          child: _tab == 1
+              ? _callHistory(allDrivers)
+              : _tab == 2
+              ? _profile()
+              : Column(
+                  children: [
+                    if (_searching)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: TextField(
+                          key: const ValueKey('directory-search-field'),
+                          controller: _search,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            labelText: tr(
+                              te: 'పేరు, ఊరు లేదా వాహనం వెతకండి',
+                              en: 'Search name, village or vehicle',
+                            ),
+                          ),
+                        ),
+                      ),
+                    _mandalFilters(),
+                    _vehicleFilters(),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _fetchDrivers,
+                        child: ListView(
+                          key: const ValueKey('directory-list'),
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            Text(
+                              tr(
+                                te: 'డ్రైవర్ విజిటింగ్ కార్డులు',
+                                en: 'Driver Visiting Cards',
+                              ),
+                              style: const TextStyle(
+                                color: _green,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 21,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _remoteLoading && _liveDrivers == null
+                                  ? language.label(AppStrings.loadingDrivers)
+                                  : tr(
+                                      te: 'డ్రైవర్లు: ${drivers.length}',
+                                      en: 'Drivers: ${drivers.length}',
+                                    ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_remoteLoading && _liveDrivers == null)
+                              const DirectoryLoadingState()
+                            else if (drivers.isEmpty)
+                              DirectoryEmptyState(onReset: _resetFilters),
+                            if (!_remoteLoading || _liveDrivers != null) ...[
+                              if (_cachedDrivers)
+                                Text(
+                                  tr(
+                                    te: 'సేవ్ చేసిన వాహనాలు',
+                                    en: 'Cached drivers',
+                                  ),
+                                ),
+                              for (final driver in drivers) ...[
+                                if (headings.containsKey(driver.id))
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    child: Text(
+                                      headings[driver.id]!,
+                                      style: const TextStyle(
+                                        color: _green,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: DriverDirectoryCard(
+                                    key: ValueKey(
+                                      'directory-driver-${driver.id}',
+                                    ),
+                                    driver: driver,
+                                    authRepository: _auth,
+                                    callerPhone: _auth.currentProfile?.phone,
+                                    callerRole: _auth.isGuest
+                                        ? 'guest'
+                                        : 'shipper',
+                                    beforeCall: _requireContact,
+                                    onCallLaunched: () => _rememberCall(driver),
+                                    onOpen: () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => VisitingCardScreen(
+                                          driver: driver,
+                                          authRepository: _auth,
+                                          beforeContact: _requireContact,
+                                          onCallLaunched: () =>
+                                              _rememberCall(driver),
+                                          callerPhone:
+                                              _auth.currentProfile?.phone,
+                                          callerRole: _auth.isGuest
+                                              ? 'guest'
+                                              : 'shipper',
+                                        ),
+                                      ),
+                                    ),
+                                    onWhatsApp: () {},
+                                  ),
+                                ),
+                              ],
+                            ],
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              key: const ValueKey('post-urgent-load'),
+                              onPressed: _postLoad,
+                              icon: const Icon(Icons.campaign),
+                              label: Text(
+                                _auth.isGuest
+                                    ? language.label(AppStrings.signInToPost)
+                                    : tr(
+                                        te: 'అత్యవసర లోడ్ పోస్ట్ చేయండి',
+                                        en: 'Post Urgent Load',
+                                      ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<String>(
+                              key: ValueKey(_villageId),
+                              initialValue: _villageId ?? '',
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: language.label(AppStrings.village),
+                              ),
+                              items: [
+                                DropdownMenuItem(
+                                  value: '',
+                                  child: Text(
+                                    language.label(AppStrings.allVillages),
+                                  ),
+                                ),
+                                for (final village in KolleruVillages.all)
+                                  DropdownMenuItem(
+                                    value: village.id,
+                                    child: Text(
+                                      tr(
+                                        te: village.teluguName,
+                                        en: village.name,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) =>
+                                  _selectVillage(value == '' ? null : value),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );

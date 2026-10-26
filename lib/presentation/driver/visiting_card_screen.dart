@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -19,10 +18,24 @@ import '../../data/repositories/supabase_driver_repository.dart';
 import '../common/audio_cue_button.dart';
 import '../common/call_button.dart';
 import '../common/driver_avatar_picker.dart';
+import '../directory/widgets/direct_call_modal.dart';
 
 class VisitingCardScreen extends StatefulWidget {
-  const VisitingCardScreen({super.key, required this.driver});
+  const VisitingCardScreen({
+    super.key,
+    required this.driver,
+    this.beforeContact,
+    this.onCallLaunched,
+    this.callerPhone,
+    this.callerRole,
+    this.authRepository,
+  });
   final DriverModel driver;
+  final AuthRepository? authRepository;
+  final Future<bool> Function()? beforeContact;
+  final VoidCallback? onCallLaunched;
+  final String? callerPhone;
+  final String? callerRole;
 
   @override
   State<VisitingCardScreen> createState() => _VisitingCardScreenState();
@@ -34,7 +47,7 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
   bool _savingAvatar = false;
   late DriverModel _driver = widget.driver;
   Uint8List? _avatarBytes;
-  late final _auth = AuthRepository.instance;
+  late final _auth = widget.authRepository ?? AuthRepository.instance;
   late final _driverRepository = SupabaseDriverRepository.instance;
 
   bool get _canEditAvatar =>
@@ -97,7 +110,9 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
     try {
       final repository = LocalDriverRepository();
       final local = await repository.getProfile();
-      if (local == null || local.id != _driver.id || local.phone != _driver.phone) {
+      if (local == null ||
+          local.id != _driver.id ||
+          local.phone != _driver.phone) {
         throw StateError('Driver profile unavailable');
       }
       final updated = local.copyWith(cardStyle: style);
@@ -105,45 +120,48 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
       await _driverRepository.upsertDriver(updated.toDriverModel());
       if (mounted) {
         setState(() => _driver = updated.toDriverModel());
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-          _driverRepository.syncPending ? 'ఫోన్‌లో సేవ్ అయింది / Saved locally • sync pending' : 'స్టైల్ సేవ్ అయింది / Style saved',
-        )));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _driverRepository.syncPending
+                  ? 'ఫోన్‌లో సేవ్ అయింది / Saved locally • sync pending'
+                  : 'స్టైల్ సేవ్ అయింది / Style saved',
+            ),
+          ),
+        );
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.saveFailed)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text(AppStrings.saveFailed)));
       }
     } finally {
       if (mounted) setState(() => _savingStyle = false);
     }
   }
 
-  Future<void> _openWhatsApp() async {
-    if (_driver.isDemo) return;
-    final digits = _driver.phone.replaceAll(RegExp(r'[^0-9]'), '');
-    final phone = digits.length == 10 ? '91$digits' : digits;
-    final text = Uri.encodeComponent(
-      'నమస్కారం ${_driver.name}, Kolleru Wheels ద్వారా సంప్రదిస్తున్నాను.',
-    );
-    final uri = Uri.parse('https://wa.me/$phone?text=$text');
+  bool _connecting = false;
+  Future<void> _openConnect() async {
+    if (_connecting) return;
+    setState(() => _connecting = true);
     try {
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
-          mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
-          ),
-        );
+      if (!_driver.isDemo &&
+          widget.beforeContact != null &&
+          !await widget.beforeContact!()) {
+        return;
       }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('WhatsApp తెరవలేకపోయాం / Could not open WhatsApp'),
-          ),
-        );
-      }
+      if (!mounted) return;
+      await showDirectCallModal(
+        context: context,
+        driver: _driver,
+        authRepository: _auth,
+        beforeContact: widget.beforeContact,
+        callerPhone: widget.callerPhone,
+        callerRole: widget.callerRole,
+        onCallLaunched: widget.onCallLaunched,
+      );
+    } finally {
+      if (mounted) setState(() => _connecting = false);
     }
   }
 
@@ -225,45 +243,89 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_canEditAvatar) ...[
-                Text('కార్డ్ స్టైల్ / Card style', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'కార్డ్ స్టైల్ / Card style',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    for (final style in DriverCardStyle.styles)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 10),
-                        child: Semantics(selected: driver.cardStyle == style.id,
-                          child: OutlinedButton(
-                            key: ValueKey('card-style-${style.id}'),
-                            style: OutlinedButton.styleFrom(backgroundColor: style.surface,
-                              foregroundColor: style.ink, side: BorderSide(color: style.accent,
-                                width: driver.cardStyle == style.id ? 3 : 1)),
-                            onPressed: _savingStyle || _savingAvatar ? null : () => _saveStyle(style.id),
-                            child: Column(children: [
-                              Container(
-                                width: 108, height: 48,
-                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: style.surface, border: Border.all(color: style.accent), borderRadius: BorderRadius.circular(8)),
-                                child: Row(children: [
-                                  Icon(driver.cardStyle == style.id ? Icons.check_circle : Icons.local_shipping_outlined, color: style.accent),
-                                  const SizedBox(width: 8),
-                                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                                    Container(height: 3, color: style.ink),
-                                    const SizedBox(height: 6),
-                                    Container(height: 3, color: style.accent),
-                                    const SizedBox(height: 6),
-                                    Container(height: 5, color: style.tag),
-                                  ])),
-                                ]),
+                  child: Row(
+                    children: [
+                      for (final style in DriverCardStyle.styles)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Semantics(
+                            selected: driver.cardStyle == style.id,
+                            child: OutlinedButton(
+                              key: ValueKey('card-style-${style.id}'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: style.surface,
+                                foregroundColor: style.ink,
+                                side: BorderSide(
+                                  color: style.accent,
+                                  width: driver.cardStyle == style.id ? 3 : 1,
+                                ),
                               ),
-                              Text(style.label),
-                            ]),
+                              onPressed: _savingStyle || _savingAvatar
+                                  ? null
+                                  : () => _saveStyle(style.id),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 108,
+                                    height: 48,
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: style.surface,
+                                      border: Border.all(color: style.accent),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          driver.cardStyle == style.id
+                                              ? Icons.check_circle
+                                              : Icons.local_shipping_outlined,
+                                          color: style.accent,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              Container(
+                                                height: 3,
+                                                color: style.ink,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Container(
+                                                height: 3,
+                                                color: style.accent,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Container(
+                                                height: 5,
+                                                color: style.tag,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(style.label),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                  ]),
+                    ],
+                  ),
                 ),
                 if (_savingStyle) const LinearProgressIndicator(),
                 const SizedBox(height: 16),
@@ -278,7 +340,13 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                   final callAction = CallButton(
                     phone: driver.phone,
                     contextNote: 'visiting_card:${driver.id}',
-                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle).action,
+                    beforeCall: widget.beforeContact,
+                    onConnect: _openConnect,
+                    onCallLaunched: widget.onCallLaunched,
+                    callerPhone: widget.callerPhone,
+                    callerRole: widget.callerRole,
+                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle)
+                        .action,
                     isDemo: driver.isDemo,
                     label: 'కాల్ / Call',
                     compact: true,
@@ -290,7 +358,9 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                       foregroundColor: const Color(0xFF187A52),
                       side: const BorderSide(color: Color(0x33187A52)),
                     ),
-                    onPressed: driver.isDemo ? null : _openWhatsApp,
+                    onPressed: driver.isDemo || _connecting
+                        ? null
+                        : _openConnect,
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -353,7 +423,8 @@ class _VisitingCardScreenState extends State<VisitingCardScreen> {
                 builder: (buttonContext) => FilledButton(
                   key: const ValueKey('share-visiting-card'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle).action,
+                    backgroundColor: DriverCardStyle.resolve(driver.cardStyle)
+                        .action,
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(64),
                   ),
@@ -459,11 +530,7 @@ class TransportVisitingCard extends StatelessWidget {
             color: palette.surface,
             child: Row(
               children: [
-                Icon(
-                  Icons.route_rounded,
-                  color: palette.accent,
-                  size: 21,
-                ),
+                Icon(Icons.route_rounded, color: palette.accent, size: 21),
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
@@ -550,15 +617,16 @@ class TransportVisitingCard extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          _badge(
-                            driver.vehicleType.label,
-                            color: palette.tag,
-                          ),
+                          _badge(driver.vehicleType.label, color: palette.tag),
                           const SizedBox(height: 3),
                           Text(
                             _capacityLabel,
                             style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: driver.cardStyle == 'gold_elite' ? palette.tag : palette.accent),
+                                ?.copyWith(
+                                  color: driver.cardStyle == 'gold_elite'
+                                      ? palette.tag
+                                      : palette.accent,
+                                ),
                           ),
                         ],
                       ),
@@ -613,7 +681,9 @@ class TransportVisitingCard extends StatelessWidget {
             ),
           ),
           Container(
-            color: driver.cardStyle == 'gold_elite' ? const Color(0xFF92400E) : palette.accent,
+            color: driver.cardStyle == 'gold_elite'
+                ? const Color(0xFF92400E)
+                : palette.accent,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
             child: Row(
               children: [

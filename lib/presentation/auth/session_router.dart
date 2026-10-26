@@ -6,6 +6,7 @@ import '../../data/repositories/admin_analytics_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../admin/admin_dashboard_screen.dart';
 import 'phone_otp_screen.dart';
+import 'complete_profile_screen.dart';
 import 'role_destination.dart';
 import '../farmer/home_directory_screen.dart';
 
@@ -13,9 +14,11 @@ class SessionRouter extends StatefulWidget {
   const SessionRouter({
     super.key,
     this.repository,
+    this.initialOtpPhone,
     this.adminAnalyticsRepository,
   });
   final AuthRepository? repository;
+  final String? initialOtpPhone;
   final AdminAnalyticsRepository? adminAnalyticsRepository;
   @override
   State<SessionRouter> createState() => _SessionRouterState();
@@ -74,7 +77,17 @@ class _SessionRouterState extends State<SessionRouter>
           )
         : profile != null
         ? RoleDestination(profile: profile, authRepository: _auth)
-        : PhoneOtpScreen(repository: _auth, onVerified: (_) => _changed());
+        : _auth.onboardingPhone != null &&
+              _auth.verifiedPhone == _auth.onboardingPhone
+        ? CompleteProfileScreen(
+            phone: _auth.onboardingPhone!,
+            repository: _auth,
+          )
+        : PhoneOtpScreen(
+            repository: _auth,
+            initialOtpPhone: widget.initialOtpPhone,
+            onVerified: (_) => _changed(),
+          );
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => unawaited(_auth.recordActivity()),

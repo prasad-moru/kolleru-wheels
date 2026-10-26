@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kolleru_wheels/core/constants/villages.dart';
 
 Future<void> revealInVerticalList(
   WidgetTester tester,
@@ -48,6 +49,12 @@ Future<void> chooseCluster(
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('mandal-option-$mandalId')).last);
   await tester.pumpAndSettle();
+  final villageInput = find.byKey(const ValueKey('village-input-field'));
+  if (villageInput.evaluate().isNotEmpty) {
+    await revealInVerticalList(tester, villageInput);
+    await tester.enterText(villageInput, KolleruVillages.find(villageId)!.name);
+    return;
+  }
   final picker = find.byKey(ValueKey('village-picker-$mandalId'));
   await revealInVerticalList(tester, picker);
   await tester.tap(picker);

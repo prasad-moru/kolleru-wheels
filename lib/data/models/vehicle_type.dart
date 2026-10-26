@@ -3,7 +3,9 @@ enum VehicleType {
   tataAce('టాటా ఏస్', 'Tata Ace'),
   dost('దోస్త్', 'Dost'),
   eicher14ft('ఐషర్ 14 అడుగులు', 'Eicher 14 ft'),
-  tractor('ట్రాక్టర్', 'Tractor');
+  tractor('ట్రాక్టర్', 'Tractor'),
+  miniTruck709('709 మినీ లారీ', '709 Mini Truck'),
+  tipper('టిప్పర్', 'Tipper');
 
   const VehicleType(this.teluguName, this.englishName);
   final String teluguName;
